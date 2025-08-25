@@ -1,0 +1,35 @@
+name: flutter_meeting_app
+description: "Flutter移动视频会议应用 - 集成LiveKit和现有PHP后端"
+
+publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.2.0
+  flutter: ">=3.16.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # UI框架
+  cupertino_icons: ^1.0.6
+
+  # 本地存储
+  shared_preferences: ^2.2.2
+
+  # UI组件
+  fluttertoast: ^8.2.4
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  
+  assets:
+    - assets/images/
+    - assets/icons/
