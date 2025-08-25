@@ -18,28 +18,10 @@
 @import connectivity_plus;
 #endif
 
-#if __has_include(<device_info_plus/FPPDeviceInfoPlusPlugin.h>)
-#import <device_info_plus/FPPDeviceInfoPlusPlugin.h>
-#else
-@import device_info_plus;
-#endif
-
-#if __has_include(<flutter_webrtc/FlutterWebRTCPlugin.h>)
-#import <flutter_webrtc/FlutterWebRTCPlugin.h>
-#else
-@import flutter_webrtc;
-#endif
-
 #if __has_include(<fluttertoast/FluttertoastPlugin.h>)
 #import <fluttertoast/FluttertoastPlugin.h>
 #else
 @import fluttertoast;
-#endif
-
-#if __has_include(<livekit_client/LiveKitPlugin.h>)
-#import <livekit_client/LiveKitPlugin.h>
-#else
-@import livekit_client;
 #endif
 
 #if __has_include(<path_provider_foundation/PathProviderPlugin.h>)
@@ -65,10 +47,7 @@
 + (void)registerWithRegistry:(NSObject<FlutterPluginRegistry>*)registry {
   [CameraPlugin registerWithRegistrar:[registry registrarForPlugin:@"CameraPlugin"]];
   [ConnectivityPlusPlugin registerWithRegistrar:[registry registrarForPlugin:@"ConnectivityPlusPlugin"]];
-  [FPPDeviceInfoPlusPlugin registerWithRegistrar:[registry registrarForPlugin:@"FPPDeviceInfoPlusPlugin"]];
-  [FlutterWebRTCPlugin registerWithRegistrar:[registry registrarForPlugin:@"FlutterWebRTCPlugin"]];
   [FluttertoastPlugin registerWithRegistrar:[registry registrarForPlugin:@"FluttertoastPlugin"]];
-  [LiveKitPlugin registerWithRegistrar:[registry registrarForPlugin:@"LiveKitPlugin"]];
   [PathProviderPlugin registerWithRegistrar:[registry registrarForPlugin:@"PathProviderPlugin"]];
   [PermissionHandlerPlugin registerWithRegistrar:[registry registrarForPlugin:@"PermissionHandlerPlugin"]];
   [SharedPreferencesPlugin registerWithRegistrar:[registry registrarForPlugin:@"SharedPreferencesPlugin"]];

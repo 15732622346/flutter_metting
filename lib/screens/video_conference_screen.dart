@@ -21,6 +21,7 @@ class VideoConferenceScreen extends StatefulWidget {
 class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _chatScrollController = ScrollController();
+  final FocusNode _inputFocusNode = FocusNode();
 
   // 直播间状态
   bool _isPlaying = true;
@@ -35,6 +36,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
 
   // 模拟聊天消息
   List<ChatMessage> _chatMessages = [];
+  bool _isInputFocused = false; // 输入框焦点状态
 
 
 
@@ -43,12 +45,20 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
     super.initState();
     _initializeData();
     _startTimer();
+
+    // 监听输入框焦点变化
+    _inputFocusNode.addListener(() {
+      setState(() {
+        _isInputFocused = _inputFocusNode.hasFocus;
+      });
+    });
   }
 
   @override
   void dispose() {
     _messageController.dispose();
     _chatScrollController.dispose();
+    _inputFocusNode.dispose();
     super.dispose();
   }
 
@@ -56,11 +66,11 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
   void _initializeData() {
     // 初始化聊天消息
     _chatMessages = [
-      ChatMessage(username: '用户小明', message: '小视频控制按钮现在非常灵敏', isSystem: false),
-      ChatMessage(username: '用户小红', message: '横屏模式效果完美', isSystem: false),
-      ChatMessage(username: '用户小李', message: '界面非常简洁流畅', isSystem: false),
-      ChatMessage(username: '用户小王', message: '键盘关闭功能很实用', isSystem: false),
-      ChatMessage(username: '系统', message: '全屏播放功能已修复', isSystem: true),
+      ChatMessage(username: '用户2', message: '阿塞法赛阿福赛', isSystem: false),
+      ChatMessage(username: '用户5', message: '扥刚扥刚扥刚', isSystem: false),
+      ChatMessage(username: '用户7', message: '阿塞法东阿福萨达', isSystem: false),
+      ChatMessage(username: '用户9', message: '绕弯儿去玩儿去玩儿', isSystem: false),
+      ChatMessage(username: '用户3', message: '阿塞法东法赛阿福', isSystem: true),
     ];
 
 
@@ -87,23 +97,20 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
     return Scaffold(
       backgroundColor: Colors.white, // 改为白色背景
       body: SafeArea(
+        minimum: EdgeInsets.symmetric(vertical: 10), // 只添加上下10px安全区域
         child: Column(
           children: [
-            // 顶部状态栏
-            _buildTopStatusBar(),
-
-            // 视频播放区域
-            Expanded(
-              flex: 3,
+            // 视频播放区域 - 固定16:9宽高比
+            AspectRatio(
+              aspectRatio: 16 / 9,
               child: _buildVideoArea(),
             ),
 
             // 麦位信息栏
             _buildMicSeatInfo(),
 
-            // 聊天区域
+            // 聊天区域 - 填充剩余空间
             Expanded(
-              flex: 2,
               child: _buildChatArea(),
             ),
 
@@ -115,68 +122,13 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
     );
   }
 
-  /// 构建顶部状态栏
-  Widget _buildTopStatusBar() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Row(
-        children: [
-          // 返回按钮
-          IconButton(
-            onPressed: () => Navigator.pop(context),
-            icon: const Icon(Icons.arrow_back, color: Colors.white),
-          ),
 
-          // 房间标题
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  widget.roomName,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                Text(
-                  '房间ID: ${widget.roomId}',
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // 音量按钮
-          IconButton(
-            onPressed: () {
-              setState(() {
-                _isMuted = !_isMuted;
-              });
-            },
-            icon: Icon(
-              _isMuted ? Icons.volume_off : Icons.volume_up,
-              color: Colors.white,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   /// 构建视频播放区域
   Widget _buildVideoArea() {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
         color: Colors.grey[900],
-        borderRadius: BorderRadius.circular(12),
       ),
       child: Stack(
         children: [
@@ -185,7 +137,6 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
             width: double.infinity,
             height: double.infinity,
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
@@ -343,11 +294,9 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
   /// 构建麦位信息栏
   Widget _buildMicSeatInfo() {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
         color: Colors.green,
-        borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
         children: [
@@ -383,28 +332,12 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
   /// 构建聊天区域
   Widget _buildChatArea() {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
         color: Colors.white, // 白色背景
-        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.grey[300]!), // 添加边框
       ),
       child: Column(
         children: [
-          // 聊天标题
-          Container(
-            padding: EdgeInsets.all(12),
-            child: Text(
-              '聊天',
-              style: TextStyle(
-                color: Colors.black, // 黑色文字
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-          Divider(height: 1, color: Colors.grey[300]),
-
           // 聊天消息列表
           Expanded(
             child: ListView.builder(
@@ -461,75 +394,110 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
   /// 构建底部输入区域
   Widget _buildBottomInputArea() {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 16),
       decoration: BoxDecoration(
         color: Colors.white, // 改为白色背景
         border: Border(
           top: BorderSide(color: Colors.grey[300]!, width: 1), // 浅色边框
         ),
       ),
-      child: Row(
-        children: [
-          // 输入框
-          Expanded(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              decoration: BoxDecoration(
-                color: Colors.grey[100], // 浅灰色输入框背景
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.grey[300]!), // 添加边框
-              ),
-              child: TextField(
-                controller: _messageController,
-                style: const TextStyle(color: Colors.black), // 黑色文字
-                decoration: const InputDecoration(
-                  hintText: '输入消息...',
-                  hintStyle: TextStyle(color: Colors.grey), // 灰色提示文字
-                  border: InputBorder.none,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Row(
+          children: [
+            // 输入框
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  color: Colors.grey[100], // 浅灰色输入框背景
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.grey[300]!), // 添加边框
                 ),
-                onSubmitted: _sendMessage,
+                child: TextField(
+                  controller: _messageController,
+                  focusNode: _inputFocusNode,
+                  style: const TextStyle(color: Colors.black), // 黑色文字
+                  decoration: const InputDecoration(
+                    hintText: '输入消息...',
+                    hintStyle: TextStyle(color: Colors.grey), // 灰色提示文字
+                    border: InputBorder.none,
+                  ),
+                  onSubmitted: _sendMessage,
+                ),
               ),
             ),
-          ),
-          const SizedBox(width: 12),
+            const SizedBox(width: 12),
 
-          // 开麦按钮
-          ElevatedButton(
-            onPressed: () {
-              // TODO: 实现开麦功能
-              _showToast('开麦功能开发中');
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.grey[600],
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
+            // 根据输入框焦点状态显示不同按钮
+            if (_isInputFocused) ...[
+            // 发送按钮（输入框获取焦点时显示）
+            SizedBox(
+              height: 48, // 设置固定高度与输入框等高
+              child: ElevatedButton(
+                onPressed: () {
+                  final message = _messageController.text.trim();
+                  if (message.isNotEmpty) {
+                    _sendMessage(message);
+                    _messageController.clear();
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                child: const Text(
+                  '发送',
+                  style: TextStyle(color: Colors.white),
+                ),
               ),
             ),
-            child: const Text(
-              '开麦',
-              style: TextStyle(color: Colors.white),
-            ),
-          ),
-          const SizedBox(width: 8),
-
-          // 上麦按钮
-          ElevatedButton(
-            onPressed: () {
-              // TODO: 实现上麦功能
-              _showToast('上麦功能开发中');
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.blue,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
+          ] else ...[
+            // 开麦和上麦按钮（输入框未获取焦点时显示）
+            SizedBox(
+              height: 48, // 设置固定高度与输入框等高
+              child: ElevatedButton(
+                onPressed: () {
+                  // TODO: 实现开麦功能
+                  _showToast('开麦功能开发中');
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.grey[600],
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                child: const Text(
+                  '开麦',
+                  style: TextStyle(color: Colors.white),
+                ),
               ),
             ),
-            child: const Text(
-              '上麦',
-              style: TextStyle(color: Colors.white),
+            const SizedBox(width: 8),
+            SizedBox(
+              height: 48, // 设置固定高度与输入框等高
+              child: ElevatedButton(
+                onPressed: () {
+                  // TODO: 实现上麦功能
+                  _showToast('上麦功能开发中');
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                child: const Text(
+                  '上麦',
+                  style: TextStyle(color: Colors.white),
+                ),
+              ),
             ),
-          ),
-        ],
+          ],
+          ],
+        ),
       ),
     );
   }
