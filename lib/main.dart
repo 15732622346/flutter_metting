@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'screens/video_conference_screen.dart';
 
 void main() {
   runApp(const VideoMeetingApp());
@@ -204,7 +205,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     });
   }
 
-  void _verifyInviteCode() {
+  void _verifyInviteCode() async {
     String code = _inviteCodeController.text.trim();
     if (code.isEmpty) {
       // 显示错误提示
@@ -222,7 +223,20 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
     // 显示成功提示
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('验证成功，正在进入会议...')),
+      SnackBar(content: Text('验证成功，正在进入直播间...')),
+    );
+
+    // 跳转到直播间界面
+    await Future.delayed(Duration(milliseconds: 500)); // 短暂延迟显示提示
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => VideoConferenceScreen(
+          roomName: _selectedMeetingTitle ?? '未知房间',
+          roomId: 'room_${DateTime.now().millisecondsSinceEpoch}',
+          inviteCode: code,
+        ),
+      ),
     );
   }
 

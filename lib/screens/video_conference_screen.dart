@@ -1,27 +1,17 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'package:livekit_client/livekit_client.dart';
-import '../providers/meeting_provider.dart';
-import '../models/room_model.dart';
-import '../models/user_model.dart';
-import '../widgets/video_track_widget.dart';
-import '../widgets/participant_grid.dart';
-import '../widgets/control_bar.dart';
-import '../widgets/chat_panel.dart';
+import 'package:flutter/services.dart';
 
-/// 视频会议主界面
+/// 直播间界面
 class VideoConferenceScreen extends StatefulWidget {
-  final String token;
-  final String wsUrl;
-  final Room room;
-  final User user;
+  final String roomName;
+  final String roomId;
+  final String inviteCode;
 
   const VideoConferenceScreen({
     super.key,
-    required this.token,
-    required this.wsUrl,
-    required this.room,
-    required this.user,
+    required this.roomName,
+    required this.roomId,
+    required this.inviteCode,
   });
 
   @override
@@ -29,604 +19,577 @@ class VideoConferenceScreen extends StatefulWidget {
 }
 
 class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
-  bool _showParticipants = false;
-  bool _showChat = false;
+  final TextEditingController _messageController = TextEditingController();
+  final ScrollController _chatScrollController = ScrollController();
+
+  // 直播间状态
+  bool _isPlaying = true;
+  bool _isMuted = false;
   bool _isFullScreen = false;
-  RemoteParticipant? _focusedParticipant;
+  int _currentTime = 0; // 秒 - 重置为0
+  int _totalTime = 70; // 秒
+
+  // 麦位和聊天数据
+  int _totalMicSeats = 10;
+  int _occupiedMicSeats = 8;
+
+  // 模拟聊天消息
+  List<ChatMessage> _chatMessages = [];
+
+
 
   @override
   void initState() {
     super.initState();
-    _joinMeeting();
+    _initializeData();
+    _startTimer();
   }
 
   @override
   void dispose() {
-    // 离开会议会在Provider中自动处理
+    _messageController.dispose();
+    _chatScrollController.dispose();
     super.dispose();
   }
 
-  /// 加入会议
-  Future<void> _joinMeeting() async {
-    final meetingProvider = context.read<MeetingProvider>();
-    
-    final success = await meetingProvider.joinMeeting(
-      token: widget.token,
-      wsUrl: widget.wsUrl,
-      room: widget.room,
-      user: widget.user,
-    );
-    
-    if (!success) {
-      _showErrorAndExit('加入会议失败');
-    }
+  /// 初始化模拟数据
+  void _initializeData() {
+    // 初始化聊天消息
+    _chatMessages = [
+      ChatMessage(username: '用户小明', message: '小视频控制按钮现在非常灵敏', isSystem: false),
+      ChatMessage(username: '用户小红', message: '横屏模式效果完美', isSystem: false),
+      ChatMessage(username: '用户小李', message: '界面非常简洁流畅', isSystem: false),
+      ChatMessage(username: '用户小王', message: '键盘关闭功能很实用', isSystem: false),
+      ChatMessage(username: '系统', message: '全屏播放功能已修复', isSystem: true),
+    ];
+
+
+  }
+
+  /// 启动计时器（模拟直播时间）
+  void _startTimer() {
+    Future.delayed(const Duration(seconds: 1), () {
+      if (mounted && _isPlaying) {
+        setState(() {
+          _currentTime++;
+          // 防止超过最大时间
+          if (_currentTime > _totalTime) {
+            _currentTime = _totalTime;
+          }
+        });
+        _startTimer();
+      }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: _onWillPop,
-      child: Scaffold(
-        backgroundColor: Colors.black,
-        body: Consumer<MeetingProvider>(
-          builder: (context, meetingProvider, child) {
-            if (meetingProvider.isConnecting) {
-              return _buildLoadingScreen();
-            }
-
-            if (!meetingProvider.isInMeeting) {
-              return _buildErrorScreen(
-                meetingProvider.lastError ?? '连接已断开'
-              );
-            }
-
-            return _buildMeetingScreen(meetingProvider);
-          },
-        ),
-      ),
-    );
-  }
-
-  /// 构建加载屏幕
-  Widget _buildLoadingScreen() {
-    return Container(
-      color: Colors.black,
-      child: const Center(
+    return Scaffold(
+      backgroundColor: Colors.white, // 改为白色背景
+      body: SafeArea(
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            CircularProgressIndicator(
-              color: Colors.white,
+            // 顶部状态栏
+            _buildTopStatusBar(),
+
+            // 视频播放区域
+            Expanded(
+              flex: 3,
+              child: _buildVideoArea(),
             ),
-            SizedBox(height: 20),
-            Text(
-              '正在加入会议...',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-              ),
+
+            // 麦位信息栏
+            _buildMicSeatInfo(),
+
+            // 聊天区域
+            Expanded(
+              flex: 2,
+              child: _buildChatArea(),
             ),
+
+            // 底部输入区域
+            _buildBottomInputArea(),
           ],
         ),
       ),
     );
   }
 
-  /// 构建错误屏幕
-  Widget _buildErrorScreen(String error) {
+  /// 构建顶部状态栏
+  Widget _buildTopStatusBar() {
     return Container(
-      color: Colors.black,
-      padding: const EdgeInsets.all(20),
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(
-              Icons.error_outline,
-              color: Colors.red,
-              size: 64,
-            ),
-            const SizedBox(height: 20),
-            Text(
-              error,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 30),
-            ElevatedButton(
-              onPressed: () => Navigator.of(context).pop(),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-              ),
-              child: const Text(
-                '离开会议',
-                style: TextStyle(color: Colors.white),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// 构建会议屏幕
-  Widget _buildMeetingScreen(MeetingProvider meetingProvider) {
-    return Stack(
-      children: [
-        // 主视频区域
-        _buildMainVideoArea(meetingProvider),
-        
-        // 顶部信息栏
-        if (!_isFullScreen) _buildTopBar(meetingProvider),
-        
-        // 参与者网格（小窗口）
-        if (!_isFullScreen && !_showParticipants)
-          _buildParticipantThumbnails(meetingProvider),
-        
-        // 参与者列表面板
-        if (_showParticipants) _buildParticipantsPanel(meetingProvider),
-        
-        // 聊天面板
-        if (_showChat) _buildChatPanel(meetingProvider),
-        
-        // 底部控制栏
-        if (!_isFullScreen) _buildBottomControls(meetingProvider),
-        
-        // 错误提示
-        if (meetingProvider.lastError != null)
-          _buildErrorBanner(meetingProvider.lastError!),
-      ],
-    );
-  }
-
-  /// 构建主视频区域
-  Widget _buildMainVideoArea(MeetingProvider meetingProvider) {
-    Widget mainVideo;
-    
-    if (_focusedParticipant != null) {
-      // 显示选中的远程参与者视频
-      final videoTrack = _focusedParticipant!.videoTrackPublications.isNotEmpty
-          ? _focusedParticipant!.videoTrackPublications.first.track
-          : null;
-      
-      if (videoTrack != null) {
-        mainVideo = VideoTrackWidget(
-          videoTrack: videoTrack as VideoTrack,
-          fit: BoxFit.cover,
-          participantName: _focusedParticipant!.identity,
-        );
-      } else {
-        mainVideo = _buildAvatarPlaceholder(_focusedParticipant!.identity);
-      }
-    } else {
-      // 显示本地视频
-      if (meetingProvider.localVideoTrack != null) {
-        mainVideo = VideoTrackWidget(
-          videoTrack: meetingProvider.localVideoTrack!,
-          fit: BoxFit.cover,
-          participantName: '我',
-          mirror: true, // 本地视频镜像显示
-        );
-      } else {
-        mainVideo = _buildAvatarPlaceholder(widget.user.displayName);
-      }
-    }
-    
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          _isFullScreen = !_isFullScreen;
-        });
-      },
-      onDoubleTap: () {
-        setState(() {
-          _focusedParticipant = null; // 双击回到本地视频
-        });
-      },
-      child: SizedBox.expand(child: mainVideo),
-    );
-  }
-
-  /// 构建头像占位符
-  Widget _buildAvatarPlaceholder(String name) {
-    return Container(
-      color: Colors.grey[800],
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            CircleAvatar(
-              radius: 40,
-              backgroundColor: Colors.blue,
-              child: Text(
-                name.isNotEmpty ? name[0].toUpperCase() : '?',
-                style: const TextStyle(
-                  fontSize: 24,
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              name,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// 构建顶部信息栏
-  Widget _buildTopBar(MeetingProvider meetingProvider) {
-    return Positioned(
-      top: 0,
-      left: 0,
-      right: 0,
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Colors.black.withOpacity(0.7),
-              Colors.transparent,
-            ],
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        children: [
+          // 返回按钮
+          IconButton(
+            onPressed: () => Navigator.pop(context),
+            icon: const Icon(Icons.arrow_back, color: Colors.white),
           ),
-        ),
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Row(
+
+          // 房间标题
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // 房间名称
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        meetingProvider.roomName,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      Text(
-                        meetingProvider.participantsSummary,
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
+                Text(
+                  widget.roomName,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
                   ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                
-                // 连接状态指示器
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: meetingProvider.connectionState == ConnectionState.connected
-                        ? Colors.green
-                        : Colors.orange,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 6,
-                        height: 6,
-                        decoration: const BoxDecoration(
-                          color: Colors.white,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        meetingProvider.connectionState == ConnectionState.connected
-                            ? '已连接'
-                            : '连接中',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                        ),
-                      ),
-                    ],
+                Text(
+                  '房间ID: ${widget.roomId}',
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 12,
                   ),
                 ),
               ],
             ),
           ),
-        ),
-      ),
-    );
-  }
 
-  /// 构建参与者缩略图
-  Widget _buildParticipantThumbnails(MeetingProvider meetingProvider) {
-    final participants = meetingProvider.remoteParticipants;
-    if (participants.isEmpty) return const SizedBox.shrink();
-
-    return Positioned(
-      top: 100,
-      right: 16,
-      child: Column(
-        children: participants.take(3).map((participant) {
-          final videoTrack = participant.videoTrackPublications.isNotEmpty
-              ? participant.videoTrackPublications.first.track as VideoTrack?
-              : null;
-
-          return GestureDetector(
-            onTap: () {
+          // 音量按钮
+          IconButton(
+            onPressed: () {
               setState(() {
-                _focusedParticipant = participant;
+                _isMuted = !_isMuted;
               });
             },
-            child: Container(
-              width: 80,
-              height: 120,
-              margin: const EdgeInsets.only(bottom: 8),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(8),
-                border: _focusedParticipant == participant
-                    ? Border.all(color: Colors.blue, width: 2)
-                    : null,
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: videoTrack != null
-                    ? VideoTrackWidget(
-                        videoTrack: videoTrack,
-                        fit: BoxFit.cover,
-                      )
-                    : _buildAvatarPlaceholder(participant.identity),
-              ),
+            icon: Icon(
+              _isMuted ? Icons.volume_off : Icons.volume_up,
+              color: Colors.white,
             ),
-          );
-        }).toList(),
+          ),
+        ],
       ),
     );
   }
 
-  /// 构建参与者面板
-  Widget _buildParticipantsPanel(MeetingProvider meetingProvider) {
-    return Positioned(
-      right: 0,
-      top: 0,
-      bottom: 0,
-      child: Container(
-        width: 300,
-        decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.9),
-          border: const Border(
-            left: BorderSide(color: Colors.grey, width: 1),
-          ),
-        ),
-        child: Column(
-          children: [
-            // 面板标题
-            Container(
-              padding: const EdgeInsets.all(16),
-              child: Row(
+  /// 构建视频播放区域
+  Widget _buildVideoArea() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: Colors.grey[900],
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Stack(
+        children: [
+          // 视频背景
+          Container(
+            width: double.infinity,
+            height: double.infinity,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.blue[900]!,
+                  Colors.blue[700]!,
+                ],
+              ),
+            ),
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Expanded(
-                    child: Text(
-                      '参与者',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
+                  // 播放按钮
+                  GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        _isPlaying = !_isPlaying;
+                      });
+                    },
+                    child: Container(
+                      width: 80,
+                      height: 80,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.9),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        _isPlaying ? Icons.pause : Icons.play_arrow,
+                        size: 40,
+                        color: Colors.black,
                       ),
                     ),
                   ),
-                  IconButton(
-                    onPressed: () {
-                      setState(() {
-                        _showParticipants = false;
-                      });
-                    },
-                    icon: const Icon(
-                      Icons.close,
+                  const SizedBox(height: 20),
+
+                  // 直播标题
+                  const Text(
+                    '"素式"挂片',
+                    style: TextStyle(
                       color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    '《天龙八部手游》爱好者的外观团队',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    '青春营剧力作',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  const Text(
+                    '今年我们将看到一群关爱你的朋友',
+                    style: TextStyle(
+                      color: Colors.white60,
+                      fontSize: 12,
                     ),
                   ),
                 ],
               ),
             ),
-            
-            // 参与者网格
-            Expanded(
-              child: ParticipantGrid(
-                participants: meetingProvider.remoteParticipants,
-                localVideoTrack: meetingProvider.localVideoTrack,
-                localUserName: widget.user.displayName,
+          ),
+
+          // 底部进度条
+          Positioned(
+            bottom: 16,
+            left: 16,
+            right: 16,
+            child: _buildProgressBar(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 构建进度条
+  Widget _buildProgressBar() {
+    return Row(
+      children: [
+        Text(
+          _formatTime(_currentTime),
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 12,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              trackHeight: 2,
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+              overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+            ),
+            child: Slider(
+              value: (_currentTime > _totalTime ? _totalTime : _currentTime).toDouble(),
+              min: 0,
+              max: _totalTime.toDouble(),
+              activeColor: Colors.white,
+              inactiveColor: Colors.white30,
+              onChanged: (value) {
+                setState(() {
+                  _currentTime = value.toInt();
+                });
+              },
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          '-${_formatTime(_totalTime - _currentTime)}',
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 12,
+          ),
+        ),
+        const SizedBox(width: 16),
+        // 画中画按钮
+        Icon(
+          Icons.picture_in_picture_alt,
+          color: Colors.white,
+          size: 20,
+        ),
+        const SizedBox(width: 12),
+        // 设置按钮
+        Icon(
+          Icons.settings,
+          color: Colors.white,
+          size: 20,
+        ),
+      ],
+    );
+  }
+
+  /// 格式化时间
+  String _formatTime(int seconds) {
+    int minutes = seconds ~/ 60;
+    int remainingSeconds = seconds % 60;
+    return '$minutes:${remainingSeconds.toString().padLeft(2, '0')}';
+  }
+
+
+
+  /// 构建麦位信息栏
+  Widget _buildMicSeatInfo() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.green,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          const Text(
+            '聊天',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const Spacer(),
+          Text(
+            '麦位：$_totalMicSeats人',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+            ),
+          ),
+          const SizedBox(width: 20),
+          Text(
+            '上麦：$_occupiedMicSeats人',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 构建聊天区域
+  Widget _buildChatArea() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: Colors.white, // 白色背景
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey[300]!), // 添加边框
+      ),
+      child: Column(
+        children: [
+          // 聊天标题
+          Container(
+            padding: EdgeInsets.all(12),
+            child: Text(
+              '聊天',
+              style: TextStyle(
+                color: Colors.black, // 黑色文字
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
               ),
             ),
-          ],
-        ),
+          ),
+          Divider(height: 1, color: Colors.grey[300]),
+
+          // 聊天消息列表
+          Expanded(
+            child: ListView.builder(
+              controller: _chatScrollController,
+              padding: EdgeInsets.all(12),
+              itemCount: _chatMessages.length,
+              itemBuilder: (context, index) {
+                final message = _chatMessages[index];
+                return _buildChatMessage(message);
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  /// 构建聊天面板
-  Widget _buildChatPanel(MeetingProvider meetingProvider) {
-    return Positioned(
-      bottom: 100,
-      left: 16,
-      right: 16,
-      height: 300,
-      child: ChatPanel(
-        messages: meetingProvider.chatMessages,
-        onSendMessage: (message) {
-          meetingProvider.sendChatMessage(message);
-        },
-      ),
-    );
-  }
-
-  /// 构建底部控制栏
-  Widget _buildBottomControls(MeetingProvider meetingProvider) {
-    return Positioned(
-      bottom: 0,
-      left: 0,
-      right: 0,
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.bottomCenter,
-            end: Alignment.topCenter,
-            colors: [
-              Colors.black.withOpacity(0.8),
-              Colors.transparent,
-            ],
+  /// 构建单条聊天消息
+  Widget _buildChatMessage(ChatMessage message) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 用户名
+          Text(
+            '${message.username}：',
+            style: TextStyle(
+              color: message.isSystem
+                  ? Colors.green[700] // 系统消息绿色
+                  : message.isOwn
+                      ? Colors.blue[700] // 自己的消息蓝色
+                      : Colors.grey[600], // 其他用户消息灰色
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
           ),
-        ),
-        child: SafeArea(
-          child: ControlBar(
-            isCameraEnabled: meetingProvider.isCameraEnabled,
-            isMicrophoneEnabled: meetingProvider.isMicrophoneEnabled,
-            isSpeakerEnabled: meetingProvider.isSpeakerEnabled,
-            canPublish: meetingProvider.canPublish,
-            onCameraToggle: meetingProvider.toggleCamera,
-            onMicrophoneToggle: meetingProvider.toggleMicrophone,
-            onSpeakerToggle: meetingProvider.toggleSpeaker,
-            onSwitchCamera: meetingProvider.switchCamera,
-            onShowParticipants: () {
-              setState(() {
-                _showParticipants = !_showParticipants;
-              });
-            },
-            onShowChat: () {
-              setState(() {
-                _showChat = !_showChat;
-              });
-            },
-            onLeave: _leaveMeeting,
-            onApplyMic: meetingProvider.isHost ? null : () {
-              meetingProvider.applyForMic();
-            },
-            participantCount: meetingProvider.totalParticipants,
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// 构建错误横幅
-  Widget _buildErrorBanner(String error) {
-    return Positioned(
-      top: 0,
-      left: 0,
-      right: 0,
-      child: SafeArea(
-        child: Container(
-          margin: const EdgeInsets.all(16),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.red,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Row(
-            children: [
-              const Icon(
-                Icons.error_outline,
-                color: Colors.white,
+          // 消息内容
+          Expanded(
+            child: Text(
+              message.message,
+              style: const TextStyle(
+                color: Colors.black, // 改为黑色文字
+                fontSize: 14,
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  error,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                  ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 构建底部输入区域
+  Widget _buildBottomInputArea() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white, // 改为白色背景
+        border: Border(
+          top: BorderSide(color: Colors.grey[300]!, width: 1), // 浅色边框
+        ),
+      ),
+      child: Row(
+        children: [
+          // 输入框
+          Expanded(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                color: Colors.grey[100], // 浅灰色输入框背景
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.grey[300]!), // 添加边框
+              ),
+              child: TextField(
+                controller: _messageController,
+                style: const TextStyle(color: Colors.black), // 黑色文字
+                decoration: const InputDecoration(
+                  hintText: '输入消息...',
+                  hintStyle: TextStyle(color: Colors.grey), // 灰色提示文字
+                  border: InputBorder.none,
                 ),
+                onSubmitted: _sendMessage,
               ),
-              IconButton(
-                onPressed: () {
-                  context.read<MeetingProvider>().clearError();
-                },
-                icon: const Icon(
-                  Icons.close,
-                  color: Colors.white,
-                ),
-              ),
-            ],
+            ),
           ),
-        ),
-      ),
-    );
-  }
+          const SizedBox(width: 12),
 
-  /// 离开会议
-  Future<void> _leaveMeeting() async {
-    final shouldLeave = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('离开会议'),
-        content: const Text('确定要离开当前会议吗？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('取消'),
-          ),
+          // 开麦按钮
           ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
+            onPressed: () {
+              // TODO: 实现开麦功能
+              _showToast('开麦功能开发中');
+            },
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
+              backgroundColor: Colors.grey[600],
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
             ),
             child: const Text(
-              '离开',
+              '开麦',
+              style: TextStyle(color: Colors.white),
+            ),
+          ),
+          const SizedBox(width: 8),
+
+          // 上麦按钮
+          ElevatedButton(
+            onPressed: () {
+              // TODO: 实现上麦功能
+              _showToast('上麦功能开发中');
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+            ),
+            child: const Text(
+              '上麦',
               style: TextStyle(color: Colors.white),
             ),
           ),
         ],
       ),
     );
+  }
 
-    if (shouldLeave == true) {
-      await context.read<MeetingProvider>().leaveMeeting();
-      if (mounted) {
-        Navigator.of(context).pop();
+  /// 发送消息
+  void _sendMessage(String message) {
+    if (message.trim().isEmpty) return;
+
+    setState(() {
+      _chatMessages.add(
+        ChatMessage(
+          username: '您',
+          message: message.trim(),
+          isSystem: false,
+          isOwn: true,
+        ),
+      );
+    });
+
+    _messageController.clear();
+
+    // 滚动到底部
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (_chatScrollController.hasClients) {
+        _chatScrollController.animateTo(
+          _chatScrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
       }
-    }
+    });
   }
 
-  /// 处理返回按钮
-  Future<bool> _onWillPop() async {
-    await _leaveMeeting();
-    return false; // 阻止默认返回行为，由_leaveMeeting处理
-  }
-
-  /// 显示错误并退出
-  void _showErrorAndExit(String error) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: const Text('错误'),
-        content: Text(error),
-        actions: [
-          ElevatedButton(
-            onPressed: () {
-              Navigator.of(context).pop(); // 关闭对话框
-              Navigator.of(context).pop(); // 退出会议页面
-            },
-            child: const Text('确定'),
-          ),
-        ],
+  /// 显示提示消息
+  void _showToast(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        duration: const Duration(seconds: 2),
+        backgroundColor: Colors.grey[800],
       ),
     );
   }
 }
+
+/// 聊天消息数据模型
+class ChatMessage {
+  final String username;
+  final String message;
+  final bool isSystem;
+  final bool isOwn;
+  final DateTime timestamp;
+
+  ChatMessage({
+    required this.username,
+    required this.message,
+    required this.isSystem,
+    this.isOwn = false,
+  }) : timestamp = DateTime.now();
+}
+
+
+
