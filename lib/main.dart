@@ -218,6 +218,58 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     });
   }
 
+  void _handleMeetingCardTap(String title, bool isActive) {
+    if (isActive) {
+      // 进行中的会议 - 弹出邀请码面板
+      _showInviteCodePanel(title);
+    } else {
+      // 已结束的会议 - 显示结束提示
+      _showMeetingEndedMessage();
+    }
+  }
+
+  void _showMeetingEndedMessage() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Container(
+          padding: EdgeInsets.symmetric(vertical: 8),
+          child: Row(
+            children: [
+              Container(
+                width: 20,
+                height: 20,
+                decoration: BoxDecoration(
+                  color: Colors.green,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.error_outline,
+                  color: Colors.white,
+                  size: 14,
+                ),
+              ),
+              SizedBox(width: 12),
+              Text(
+                '会议已结束！',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                ),
+              ),
+            ],
+          ),
+        ),
+        backgroundColor: Color(0xFF424242),
+        duration: Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+        margin: EdgeInsets.all(16),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
+      ),
+    );
+  }
+
   void _verifyInviteCode() async {
     String code = _inviteCodeController.text.trim();
     if (code.isEmpty) {
@@ -585,107 +637,153 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     required bool isActive,
   }) {
     return Container(
-      color: Colors.white,
-      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-      child: Row(
-        children: [
-          // 左侧图标和标签
-          Column(
-            children: [
-              Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: Colors.blue,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Icon(
-                  Icons.videocam,
-                  color: Colors.white,
-                  size: 18,
-                ),
-              ),
-              SizedBox(height: 4),
-              Text(
-                '云会议',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: Colors.blue,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
+      margin: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 8,
+            offset: Offset(0, 2),
           ),
-          SizedBox(width: 12),
-          // 中间内容
-          Expanded(
+        ],
+      ),
+      child: Column(
+        children: [
+          // 背景图片区域
+          ClipRRect(
+            borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(12),
+              topRight: Radius.circular(12),
+            ),
+            child: Stack(
+              children: [
+                // 背景图
+                Image.asset(
+                  'assets/images/card_thumb_bg.webp',
+                  fit: BoxFit.fitWidth,
+                  width: double.infinity,
+                ),
+                
+                // 状态标签 - 右上角
+                Positioned(
+                  top: 12,
+                  right: 12,
+                  child: Container(
+                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: isActive ? Colors.green : Colors.red,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      status,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ),
+                
+                // 中央播放按钮
+                Positioned.fill(
+                  child: Center(
+                    child: GestureDetector(
+                      onTap: () => _handleMeetingCardTap(title, isActive),
+                      child: Container(
+                        width: 60,
+                        height: 60,
+                        decoration: BoxDecoration(
+                          color: Colors.blue,
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.blue.withOpacity(0.3),
+                              blurRadius: 8,
+                              spreadRadius: 2,
+                            ),
+                          ],
+                        ),
+                        child: Icon(
+                          Icons.play_arrow,
+                          color: Colors.white,
+                          size: 32,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          
+          // 底部信息区域 - 白色背景
+          Container(
+            padding: EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  title,
+                  '云会议 - ID: $roomId',
                   style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.black,
-                    height: 1.3,
+                    color: Colors.grey[600],
+                    fontSize: 12,
+                    fontWeight: FontWeight.w400,
                   ),
                 ),
-                SizedBox(height: 6),
+                SizedBox(height: 4),
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: Colors.black,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                SizedBox(height: 12),
+                Divider(
+                  height: 1,
+                  color: Colors.grey[300],
+                ),
+                SizedBox(height: 12),
                 Row(
                   children: [
-                    Text(
-                      '房间ID：$roomId',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: Color(0xFF999999),
-                      ),
-                    ),
-                    SizedBox(width: 12),
+                    Icon(Icons.person, size: 16, color: Colors.grey[600]),
+                    SizedBox(width: 4),
                     Text(
                       '主持人：$host',
                       style: TextStyle(
-                        fontSize: 11,
-                        color: Color(0xFF999999),
+                        color: Colors.grey[600],
+                        fontSize: 12,
+                      ),
+                    ),
+                    Spacer(),
+                    GestureDetector(
+                      onTap: () => _handleMeetingCardTap(title, isActive),
+                      child: Container(
+                        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.blue,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Text(
+                          '进入',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
                       ),
                     ),
                   ],
                 ),
               ],
             ),
-          ),
-          // 右侧状态和按钮
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                status,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: isActive ? Colors.blue : Colors.red,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              SizedBox(height: 8),
-              GestureDetector(
-                onTap: () => _showInviteCodePanel(title),
-                child: Container(
-                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.blue, width: 1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    '进入',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.blue,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              ),
-            ],
           ),
         ],
       ),
