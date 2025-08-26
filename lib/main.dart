@@ -1,8 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'screens/video_conference_screen.dart';
+import 'services/app_updater.dart';
+import 'core/hot_update_manager.dart';
+import 'modules/payment_module.dart';
+import 'widgets/version_float_widget.dart';
+import 'config/version_config.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  // 初始化热更新管理器
+  await HotUpdateManager.instance.initialize();
+  
+  // 注册核心业务模块
+  await PaymentModule.register();
+  
+  // 启动自动检查热更新
+  HotUpdateManager.instance.startAutoCheck();
+  
   runApp(const VideoMeetingApp());
 }
 
@@ -324,6 +340,16 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           );
         },
       ),
+          
+          // 版本标识浮动框 - 显示在页面中间
+          Positioned(
+            top: MediaQuery.of(context).size.height * 0.35,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: VersionFloatWidget(),
+            ),
+          ),
           // 用户菜单下拉面板
           if (_isUserMenuVisible)
             Positioned(
@@ -1178,19 +1204,38 @@ class UserProfilePage extends StatelessWidget {
                   _buildDivider(),
                   _buildMenuItem(
                     context,
+                    icon: Icons.payment,
+                    title: '会员支付',
+                    onTap: () {
+                      // 使用插件化支付模块
+                      final paymentScreen = PaymentModule.getPaymentScreen(context);
+                      if (paymentScreen != null) {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => paymentScreen),
+                        );
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('支付模块正在加载中...')),
+                        );
+                      }
+                    },
+                  ),
+                  _buildDivider(),
+                  _buildMenuItem(
+                    context,
                     icon: Icons.system_update,
                     title: '系统更新',
                     trailing: Text(
-                      'v1.1',
+                      'v${VersionConfig.versionNumber}',
                       style: TextStyle(
                         color: Colors.blue,
                         fontSize: 14,
                       ),
                     ),
-                    onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('当前已是最新版本')),
-                      );
+                    onTap: () async {
+                      // 使用AppUpdater的热更新功能
+                      await AppUpdater.checkAndUpdate(context);
                     },
                   ),
                   _buildDivider(),

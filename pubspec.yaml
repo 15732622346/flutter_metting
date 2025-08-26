@@ -16,8 +16,8 @@ dependencies:
   # UI框架
   cupertino_icons: ^1.0.6
 
-  # LiveKit视频会议SDK (暂时注释掉以解决构建问题)
-  # livekit_client: ^1.5.2
+  # LiveKit视频会议SDK
+  livekit_client: ^1.5.2
 
   # 网络请求
   dio: ^5.3.2
@@ -37,6 +37,13 @@ dependencies:
 
   # UI组件
   fluttertoast: ^8.2.4
+  
+  # 热更新功能
+  ota_update: ^5.0.1
+  package_info_plus: ^5.0.1
+  
+  # 文件打开功能
+  open_file: ^3.3.2
 
 dev_dependencies:
   flutter_test:

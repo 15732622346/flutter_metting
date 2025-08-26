@@ -14,11 +14,18 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     
     <!-- 蓝牙权限（耳机支持） -->
-    <uses-permission android:name="android.permission.BLUETOOTH" />
-    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+
+    <!-- LiveKit额外权限 -->
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
     
     <!-- 唤醒锁（保持屏幕常亮） -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    
+    <!-- 应用内更新权限 -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     
     <!-- 摄像头功能声明 -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
