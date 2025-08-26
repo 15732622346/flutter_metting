@@ -229,45 +229,43 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   void _showMeetingEndedMessage() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Container(
-          padding: EdgeInsets.symmetric(vertical: 8),
-          child: Row(
-            children: [
-              Container(
-                width: 20,
-                height: 20,
-                decoration: BoxDecoration(
-                  color: Colors.green,
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  Icons.error_outline,
-                  color: Colors.white,
-                  size: 14,
-                ),
+    ScaffoldMessenger.of(context).showMaterialBanner(
+      MaterialBanner(
+        content: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 20,
+              height: 20,
+              decoration: BoxDecoration(
+                color: Colors.green,
+                shape: BoxShape.circle,
               ),
-              SizedBox(width: 12),
-              Text(
-                '会议已结束！',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                ),
+              child: Icon(
+                Icons.error_outline,
+                color: Colors.white,
+                size: 14,
               ),
-            ],
-          ),
+            ),
+            SizedBox(width: 12),
+            Text(
+              '会议已结束！',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+              ),
+            ),
+          ],
         ),
         backgroundColor: Color(0xFF424242),
-        duration: Duration(seconds: 2),
-        behavior: SnackBarBehavior.floating,
-        margin: EdgeInsets.all(16),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-        ),
+        actions: [Container()], // 必须要有actions，但设置为空容器
       ),
     );
+
+    // 2秒后自动隐藏
+    Future.delayed(Duration(seconds: 2), () {
+      ScaffoldMessenger.of(context).hideCurrentMaterialBanner();
+    });
   }
 
   void _verifyInviteCode() async {
