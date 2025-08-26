@@ -376,15 +376,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         },
       ),
           
-          // 版本标识浮动框 - 显示在页面中间
-          Positioned(
-            top: MediaQuery.of(context).size.height * 0.35,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: VersionFloatWidget(),
-            ),
-          ),
           // 用户菜单下拉面板
           if (_isUserMenuVisible)
             Positioned(
