@@ -16,17 +16,15 @@ class AppUpdater {
   
   // ==================== 配置参数 ====================
   
-  /// APK下载地址 - 你的实际服务器地址
-  static const String APK_DOWNLOAD_URL = 
-    "https://meet.pgm18.com/downloads/flutter-meeting-app-v1.2.0.apk";
-  
-  /// 版本检查API地址（可选）
+  /// 版本检查API地址 - 服务端控制所有版本信息
   static const String VERSION_CHECK_URL = 
     "https://meet.pgm18.com/downloads/version-info.json";
     
-  /// 当前版本号（用于演示，实际应从package_info获取）
-  static const String DEMO_CURRENT_VERSION = "1.1.0";
-  static const String DEMO_LATEST_VERSION = "1.2.0";
+  /// 备用API地址（容灾）
+  static const List<String> BACKUP_VERSION_CHECK_URLS = [
+    "https://meet.pgm18.com/downloads/version-info.json",
+    "https://meet.pgm18.com/api/version-check",
+  ];
   
   // ==================== 核心功能方法 ====================
   
@@ -37,64 +35,41 @@ class AppUpdater {
       return packageInfo.version;
     } catch (e) {
       print('获取版本号失败: $e');
-      return DEMO_CURRENT_VERSION; // 返回演示版本号
+      // 如果获取失败，返回配置文件中的版本号
+      return VersionConfig.versionNumber;
     }
   }
   
-  /// 检查是否有更新（API版本检查）
+  /// 检查是否有更新（完全基于服务器API）
   static Future<Map<String, dynamic>> checkForUpdate() async {
     try {
       final currentVersion = await getCurrentVersion();
+      print('当前应用版本: $currentVersion');
       
-      // 如果是旧版本配置，强制显示更新
-      if (!VersionConfig.IS_NEW_VERSION) {
-        print('检测到旧版本配置，强制显示更新');
+      // 尝试从服务器获取最新版本信息
+      Map<String, dynamic>? serverInfo = await _fetchServerVersionInfo();
+      
+      if (serverInfo == null) {
         return {
-          'hasUpdate': true,
-          'currentVersion': currentVersion,
-          'latestVersion': '2.0.0',
-          'downloadUrl': APK_DOWNLOAD_URL,
-          'changelog': '✨ 新增支付功能：支持微信支付、支付宝支付\\n🔧 修复视频会议连接稳定性问题\\n🎨 优化用户界面体验\\n📱 版本标识浮动框升级',
-          'fileSizeMB': '41'
+          'hasUpdate': false,
+          'error': '无法连接到更新服务器'
         };
       }
       
-      // 从API获取版本信息
-      try {
-        final dio = Dio();
-        final response = await dio.get(VERSION_CHECK_URL);
-        final data = response.data;
-        
-        print('当前版本: $currentVersion');
-        print('服务器版本: ${data['version']}');
-        
-        // 强制检查版本比较，确保旧版本能检测到更新
-        final serverVersion = data['version'] ?? DEMO_LATEST_VERSION;
-        final hasUpdate = _compareVersions(currentVersion, serverVersion);
-        
-        print('版本比较结果: $currentVersion < $serverVersion = $hasUpdate');
-        
-        return {
-          'hasUpdate': hasUpdate, // 基于版本比较结果
-          'currentVersion': currentVersion,
-          'latestVersion': serverVersion,
-          'downloadUrl': data['download_url'] ?? APK_DOWNLOAD_URL,
-          'changelog': data['changelog'] ?? '✨ 新增支付功能：支持微信支付、支付宝支付\\n🔧 修复视频会议连接稳定性问题\\n🎨 优化用户界面体验',
-          'fileSizeMB': data['file_size_mb']?.toString() ?? '40'
-        };
-      } catch (apiError) {
-        print('API检查失败，使用硬编码检查: $apiError');
-        
-        // 如果API失败，强制显示更新对话框进行测试
-        return {
-          'hasUpdate': true,
-          'currentVersion': currentVersion,
-          'latestVersion': DEMO_LATEST_VERSION,
-          'downloadUrl': APK_DOWNLOAD_URL,
-          'changelog': '✨ 新增支付功能：支持微信支付、支付宝支付\\n🔧 修复视频会议连接稳定性问题\\n🎨 优化用户界面体验',
-          'fileSizeMB': '40'
-        };
-      }
+      final serverVersion = serverInfo['version'] ?? '1.0.0';
+      final hasUpdate = _compareVersions(currentVersion, serverVersion);
+      
+      print('服务器版本: $serverVersion');
+      print('版本比较结果: $currentVersion vs $serverVersion = ${hasUpdate ? "需要更新" : "无需更新"}');
+      
+      return {
+        'hasUpdate': hasUpdate,
+        'currentVersion': currentVersion,
+        'latestVersion': serverVersion,
+        'downloadUrl': serverInfo['download_url'] ?? '',
+        'changelog': serverInfo['changelog'] ?? '版本更新',
+        'fileSizeMB': serverInfo['file_size_mb']?.toString() ?? '40'
+      };
       
     } catch (e) {
       print('检查更新失败: $e');
@@ -105,10 +80,50 @@ class AppUpdater {
     }
   }
   
-  /// 执行应用更新下载和自动安装
-  static Future<void> downloadAndAutoInstall(BuildContext context) async {
+  /// 从服务器获取版本信息（带容灾机制）
+  static Future<Map<String, dynamic>?> _fetchServerVersionInfo() async {
+    final dio = Dio();
+    
+    // 尝试主要URL
     try {
-      print('开始下载APK: $APK_DOWNLOAD_URL');
+      print('尝试从主服务器获取版本信息: $VERSION_CHECK_URL');
+      final response = await dio.get(VERSION_CHECK_URL);
+      if (response.statusCode == 200 && response.data != null) {
+        print('成功获取服务器版本信息');
+        return response.data;
+      }
+    } catch (e) {
+      print('主服务器请求失败: $e');
+    }
+    
+    // 尝试备用URL
+    for (String backupUrl in BACKUP_VERSION_CHECK_URLS) {
+      try {
+        print('尝试备用服务器: $backupUrl');
+        final response = await dio.get(backupUrl);
+        if (response.statusCode == 200 && response.data != null) {
+          print('备用服务器请求成功');
+          return response.data;
+        }
+      } catch (e) {
+        print('备用服务器 $backupUrl 请求失败: $e');
+        continue;
+      }
+    }
+    
+    print('所有服务器都无法访问');
+    return null;
+  }
+  
+  /// 执行应用更新下载和自动安装
+  static Future<void> downloadAndAutoInstall(BuildContext context, String downloadUrl) async {
+    try {
+      if (downloadUrl.isEmpty) {
+        _showToast('下载地址为空，无法更新');
+        return;
+      }
+      
+      print('开始下载APK: $downloadUrl');
       
       // 显示下载进度对话框
       showDialog(
@@ -124,7 +139,7 @@ class AppUpdater {
       // 使用Dio下载APK
       final dio = Dio();
       await dio.download(
-        APK_DOWNLOAD_URL,
+        downloadUrl,
         apkPath,
         onReceiveProgress: (received, total) {
           final progress = (received / total * 100).toInt();
@@ -216,10 +231,15 @@ class AppUpdater {
     }
   }
 
-  /// 执行应用更新下载和安装 (原方法保持不变)
-  static Future<void> downloadAndInstall(BuildContext context) async {
+  /// 执行应用更新下载和安装 (使用OTA_UPDATE)
+  static Future<void> downloadAndInstall(BuildContext context, String downloadUrl) async {
     try {
-      print('开始下载APK: $APK_DOWNLOAD_URL');
+      if (downloadUrl.isEmpty) {
+        _showToast('下载地址为空，无法更新');
+        return;
+      }
+      
+      print('开始下载APK: $downloadUrl');
       
       // 显示下载进度对话框
       showDialog(
@@ -230,7 +250,7 @@ class AppUpdater {
       
       // 使用OTA_UPDATE执行下载安装
       OtaUpdate().execute(
-        APK_DOWNLOAD_URL,
+        downloadUrl,
         destinationFilename: 'meeting_app_update.apk',
       ).listen(
         (OtaEvent event) {
@@ -286,11 +306,12 @@ class AppUpdater {
         final shouldUpdate = await _showUpdateConfirmDialog(context, updateInfo);
         
         if (shouldUpdate == true) {
+          final downloadUrl = updateInfo['downloadUrl'] ?? '';
           // 执行自动安装更新
-          await downloadAndAutoInstall(context);
+          await downloadAndAutoInstall(context, downloadUrl);
         }
       } else {
-        _showToast(updateInfo['message'] ?? '当前已是最新版本');
+        _showToast(updateInfo['error'] ?? '当前已是最新版本');
       }
       
     } catch (e) {
@@ -398,7 +419,7 @@ class AppUpdater {
             Text('更新完成'),
           ],
         ),
-        content: Text('新版本下载完成！\\n\\n系统将弹出安装提示，请点击"安装"以完成更新。\\n\\n更新后您将获得支付功能等新特性！'),
+        content: Text('新版本下载完成！\\n\\n系统将弹出安装提示，请点击"安装"以完成更新。\\n\\n更新后您将获得最新功能！'),
         actions: [
           ElevatedButton(
             onPressed: () => Navigator.of(context).pop(),
@@ -444,7 +465,7 @@ class UpdateProgressDialog extends StatelessWidget {
           ),
           SizedBox(height: 8),
           Text(
-            '包含支付功能等新特性',
+            '包含最新功能优化',
             style: TextStyle(fontSize: 12, color: Colors.grey[600]),
           ),
           SizedBox(height: 12),

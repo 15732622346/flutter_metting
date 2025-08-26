@@ -23,19 +23,16 @@ class VersionConfig {
   
   /// 版本描述
   static String get versionDescription => IS_NEW_VERSION 
-    ? '支付功能已上线'
+    ? '最新功能版本'
     : '基础功能版';
     
-  /// 版本号
+  /// 版本号（与pubspec.yaml保持一致）
   static String get versionNumber => IS_NEW_VERSION ? '2.0.0' : '1.0.0';
   
   // ==================== 功能开关 ====================
   
   /// 是否显示版本浮动框
   static const bool SHOW_VERSION_FLOAT = true;
-  
-  /// 是否显示支付功能 (新版本才有)
-  static bool get showPaymentFeature => IS_NEW_VERSION;
   
   /// 是否显示新功能提示
   static bool get showNewFeatureTip => IS_NEW_VERSION;

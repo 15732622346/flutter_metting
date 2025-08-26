@@ -3,7 +3,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'screens/video_conference_screen.dart';
 import 'services/app_updater.dart';
 import 'core/hot_update_manager.dart';
-import 'modules/payment_module.dart';
 import 'widgets/version_float_widget.dart';
 import 'config/version_config.dart';
 
@@ -13,8 +12,6 @@ void main() async {
   // 初始化热更新管理器
   await HotUpdateManager.instance.initialize();
   
-  // 注册核心业务模块
-  await PaymentModule.register();
   
   // 启动自动检查热更新
   HotUpdateManager.instance.startAutoCheck();
@@ -279,27 +276,15 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        leading: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SizedBox(width: 16),
-            Icon(
-              Icons.groups,
-              color: Colors.blue,
-              size: 24,
-            ),
-            SizedBox(width: 8),
-            Text(
-              'U会议',
-              style: TextStyle(
-                color: Colors.black,
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
+        leading: Container(
+          margin: EdgeInsets.only(left: 16),
+          child: Image.asset(
+            'assets/images/logo.png',
+            height: 22.4,
+            fit: BoxFit.contain,
+          ),
         ),
-        leadingWidth: 120,
+        leadingWidth: 105,
         actions: [
           Padding(
             padding: EdgeInsets.only(right: 16),
@@ -1199,26 +1184,6 @@ class UserProfilePage extends StatelessWidget {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(content: Text('修改密码功能开发中...')),
                       );
-                    },
-                  ),
-                  _buildDivider(),
-                  _buildMenuItem(
-                    context,
-                    icon: Icons.payment,
-                    title: '会员支付',
-                    onTap: () {
-                      // 使用插件化支付模块
-                      final paymentScreen = PaymentModule.getPaymentScreen(context);
-                      if (paymentScreen != null) {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (context) => paymentScreen),
-                        );
-                      } else {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('支付模块正在加载中...')),
-                        );
-                      }
                     },
                   ),
                   _buildDivider(),
