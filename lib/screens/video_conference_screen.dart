@@ -200,25 +200,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
                     ),
                   ),
                 ),
-                // 视频信息
-                Positioned(
-                  bottom: 20,
-                  left: 20,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.7),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: const Text(
-                      '🎬 Big Buck Bunny (测试视频)',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                ),
+
               ],
             )
           : const Center(
@@ -628,12 +610,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
                 SizedBox(
                   height: 40, // 与输入框高度完全一致
                   child: ElevatedButton(
-                    onPressed: () {
-                      final message = _messageController.text.trim();
-                      if (message.isNotEmpty) {
-                        _sendMessage(message);
-                      }
-                    },
+                    onPressed: () => _sendMessage(_messageController.text),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFFff5722), // #ff5722 橙红色
                       foregroundColor: Colors.white,

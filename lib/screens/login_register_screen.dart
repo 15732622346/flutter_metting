@@ -149,11 +149,6 @@ class _LoginRegisterPageState extends State<LoginRegisterPage> {
           widget.onLoginSuccess!(account);
         }
 
-        // 显示成功提示
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('登录成功')),
-        );
-
         // 返回主页面
         Navigator.pop(context);
       }

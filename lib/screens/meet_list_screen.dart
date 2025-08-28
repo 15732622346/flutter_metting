@@ -245,13 +245,7 @@ class _MeetListPageState extends State<MeetListPage> with TickerProviderStateMix
     // 验证成功后关闭面板
     _hideInviteCodePanel();
 
-    // 显示成功提示
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('验证成功，正在进入直播间...')),
-    );
-
     // 跳转到直播间界面
-    await Future.delayed(Duration(milliseconds: 500)); // 短暂延迟显示提示
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -287,7 +281,7 @@ class _MeetListPageState extends State<MeetListPage> with TickerProviderStateMix
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: PreferredSize(
-        preferredSize: Size.fromHeight(38), // 进一步减少AppBar高度到48*4/5=38
+        preferredSize: Size.fromHeight(42), // 增加AppBar高度到42像素 (38+4)
         child: AppBar(
           leading: Container(
             margin: EdgeInsets.only(left: 10),
@@ -317,7 +311,7 @@ class _MeetListPageState extends State<MeetListPage> with TickerProviderStateMix
           ],
           backgroundColor: Colors.white,
           elevation: 0,
-          toolbarHeight: 38, // 设置工具栏高度到38
+          toolbarHeight: 42, // 设置工具栏高度到42像素 (38+4)
         ),
       ),
       backgroundColor: Color(0xFFF5F5F5),
