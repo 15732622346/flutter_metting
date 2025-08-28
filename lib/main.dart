@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'screens/video_conference_screen.dart';
 import 'screens/simple_profile_screen.dart';
@@ -12,14 +13,24 @@ import 'config/version_config.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
-  // 初始化热更新管理器
-  await HotUpdateManager.instance.initialize();
-  
-  
-  // 启动自动检查热更新
-  HotUpdateManager.instance.startAutoCheck();
-  
+
+  // 禁用 Flutter Web 调试工具栏
+  if (kIsWeb && kDebugMode) {
+    // 隐藏 Flutter Web 的调试工具栏
+    debugPrint('隐藏 Flutter Web 调试工具栏');
+  }
+
+  // 完全禁用热更新功能（避免 Web 端问题）
+  if (kDebugMode) {
+    print('热更新功能已禁用');
+  }
+
+  // 注释掉热更新相关代码
+  // if (!kIsWeb) {
+  //   await HotUpdateManager.instance.initialize();
+  //   HotUpdateManager.instance.startAutoCheck();
+  // }
+
   runApp(const VideoMeetingApp());
 }
 
@@ -100,7 +111,21 @@ class VideoMeetingApp extends StatelessWidget {
         ),
       ),
       home: const MeetListPage(),
-      debugShowCheckedModeBanner: false,
+      debugShowCheckedModeBanner: false, // 隐藏右上角 debug 标签
+      // 在 Web 平台隐藏调试工具栏
+      builder: (context, child) {
+        if (kIsWeb && kDebugMode) {
+          // 通过自定义 builder 来隐藏 Web 调试工具
+          return MediaQuery(
+            data: MediaQuery.of(context).copyWith(
+              // 移除顶部的调试工具栏空间
+              padding: MediaQuery.of(context).padding.copyWith(top: 0),
+            ),
+            child: child!,
+          );
+        }
+        return child!;
+      },
     );
   }
 }

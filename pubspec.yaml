@@ -37,6 +37,9 @@ dependencies:
 
   # UI组件
   fluttertoast: ^8.2.4
+
+  # 视频播放器
+  video_player: ^2.8.1
   
   # 热更新功能
   ota_update: ^5.0.1

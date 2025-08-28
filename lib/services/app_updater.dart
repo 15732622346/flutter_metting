@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:ota_update/ota_update.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:dio/dio.dart';
@@ -16,15 +17,31 @@ class AppUpdater {
   
   // ==================== 配置参数 ====================
   
-  /// 版本检查API地址 - 服务端控制所有版本信息
-  static const String VERSION_CHECK_URL = 
-    "https://meet.pgm18.com/downloads/version-info.json";
-    
+  /// 版本检查API地址 - 根据平台选择不同的URL
+  static String get VERSION_CHECK_URL {
+    if (kIsWeb) {
+      // Web 平台使用代理服务器
+      return "http://localhost:3001/api/downloads/version-info.json";
+    } else {
+      // 移动端直接访问
+      return "https://meet.pgm18.com/downloads/version-info.json";
+    }
+  }
+
   /// 备用API地址（容灾）
-  static const List<String> BACKUP_VERSION_CHECK_URLS = [
-    "https://meet.pgm18.com/downloads/version-info.json",
-    "https://meet.pgm18.com/api/version-check",
-  ];
+  static List<String> get BACKUP_VERSION_CHECK_URLS {
+    if (kIsWeb) {
+      return [
+        "http://localhost:3001/api/downloads/version-info.json",
+        "http://localhost:3001/api/api/version-check",
+      ];
+    } else {
+      return [
+        "https://meet.pgm18.com/downloads/version-info.json",
+        "https://meet.pgm18.com/api/version-check",
+      ];
+    }
+  }
   
   // ==================== 核心功能方法 ====================
   
@@ -83,7 +100,21 @@ class AppUpdater {
   /// 从服务器获取版本信息（带容灾机制）
   static Future<Map<String, dynamic>?> _fetchServerVersionInfo() async {
     final dio = Dio();
-    
+
+    // Web 平台特殊配置
+    if (kIsWeb) {
+      // 配置 Web 代理和 CORS 处理
+      dio.options.headers.addAll({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      });
+
+      // 设置更长的超时时间
+      dio.options.connectTimeout = const Duration(seconds: 30);
+      dio.options.receiveTimeout = const Duration(seconds: 30);
+    }
+
     // 尝试主要URL
     try {
       print('尝试从主服务器获取版本信息: $VERSION_CHECK_URL');
