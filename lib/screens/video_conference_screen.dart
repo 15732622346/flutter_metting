@@ -460,15 +460,39 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
             ),
           ),
 
-          // 房间信息 - 右对齐，使用Flexible防止溢出
+          // 房间信息 - 右对齐，使用Flexible防止溢出，数字显示为黄色
           Flexible(
             child: Align(
               alignment: Alignment.centerRight,
-              child: Text(
-                '麦位：${_totalMicSeats}人 上限：${_occupiedMicSeats}人 主持人：$_moderator',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
+              child: RichText(
+                text: TextSpan(
+                  style: const TextStyle(fontSize: 14),
+                  children: [
+                    const TextSpan(
+                      text: '麦位：',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                    TextSpan(
+                      text: '${_totalMicSeats}人',
+                      style: const TextStyle(color: Color(0xFFffe200)), // 黄色数字
+                    ),
+                    const TextSpan(
+                      text: ' 上限：',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                    TextSpan(
+                      text: '${_occupiedMicSeats}人',
+                      style: const TextStyle(color: Color(0xFFffe200)), // 黄色数字
+                    ),
+                    const TextSpan(
+                      text: ' 主持人：',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                    TextSpan(
+                      text: _moderator,
+                      style: const TextStyle(color: Color(0xFFffe200)), // 黄色文字
+                    ),
+                  ],
                 ),
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.right,

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../providers/meeting_provider.dart';
+import '../screens/video_conference_screen.dart';
 
 /// 聊天面板组件
 class ChatPanel extends StatefulWidget {
