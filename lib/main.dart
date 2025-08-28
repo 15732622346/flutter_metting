@@ -189,18 +189,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         ),
       );
     } else {
-      // 未登录 - 使用统一个人中心页面（包含登录功能）
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => UnifiedPersonalCenterPage(
-            isLoggedIn: _isLoggedIn,
-            username: _currentUsername,
-            onLoginSuccess: _onLoginSuccess,
-            onLogout: _onLogout,
-          ),
-        ),
-      );
+      // 未登录 - 弹出下拉菜单
+      _toggleUserMenu();
     }
   }
 
@@ -349,7 +339,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => PersonalCenterPage(
+        builder: (context) => LoginRegisterPage(
           isRegister: isRegister,
           onLoginSuccess: _onLoginSuccess,
         ),
@@ -822,28 +812,30 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 }
 
-// 个人中心页面
-class PersonalCenterPage extends StatefulWidget {
+// 登录注册页面
+class LoginRegisterPage extends StatefulWidget {
   final bool isRegister;
   final Function(String)? onLoginSuccess;
 
-  const PersonalCenterPage({
+  const LoginRegisterPage({
     super.key,
     required this.isRegister,
     this.onLoginSuccess,
   });
 
   @override
-  State<PersonalCenterPage> createState() => _PersonalCenterPageState();
+  State<LoginRegisterPage> createState() => _LoginRegisterPageState();
 }
 
-class _PersonalCenterPageState extends State<PersonalCenterPage> {
+class _LoginRegisterPageState extends State<LoginRegisterPage> {
+  final _formKey = GlobalKey<FormState>();
   final TextEditingController _accountController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _confirmPasswordController = TextEditingController();
   bool _isCameraEnabled = false;
   bool _isMicrophoneEnabled = true;
   late bool _isRegisterMode;
+  bool _isLoading = false;
 
   @override
   void initState() {
@@ -860,81 +852,73 @@ class _PersonalCenterPageState extends State<PersonalCenterPage> {
   }
 
   Future<void> _handleSubmit() async {
-    String account = _accountController.text.trim();
-    String password = _passwordController.text.trim();
-
-    if (account.isEmpty || password.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_isRegisterMode ? '请输入注册信息' : '请输入账号和密码')),
-      );
+    if (!_formKey.currentState!.validate()) {
       return;
     }
 
-    if (_isRegisterMode) {
-      // 注册逻辑
-      String confirmPassword = _confirmPasswordController.text.trim();
-      if (confirmPassword.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('请确认密码')),
-        );
-        return;
-      }
-      if (password != confirmPassword) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('两次输入的密码不一致')),
-        );
-        return;
-      }
+    setState(() {
+      _isLoading = true;
+    });
 
-      // 检查密码强度
-      if (password.length < 6) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('密码长度至少6位')),
-        );
-        return;
-      }
+    try {
+      String account = _accountController.text.trim();
+      String password = _passwordController.text.trim();
 
-      // 尝试注册
-      bool success = UserDatabase.registerUser(account, password);
-      if (success) {
-        // 注册成功，自动登录
+      if (_isRegisterMode) {
+        // 注册逻辑
+        String confirmPassword = _confirmPasswordController.text.trim();
+
+        if (password != confirmPassword) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('两次密码输入不一致')),
+          );
+          return;
+        }
+
+        // 模拟注册请求
+        await Future.delayed(Duration(seconds: 1));
+
+        // 显示注册成功消息
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('注册成功，请登录')),
+        );
+
+        // 切换到登录模式
+        setState(() {
+          _isRegisterMode = false;
+          _accountController.clear();
+          _passwordController.clear();
+          _confirmPasswordController.clear();
+        });
+      } else {
+        // 登录逻辑
+        // 模拟登录请求
+        await Future.delayed(Duration(seconds: 1));
+
+        // 保存登录状态
         await UserManager.saveLoginState(account);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('注册成功！')),
-        );
 
         // 通知父页面登录成功
         if (widget.onLoginSuccess != null) {
           widget.onLoginSuccess!(account);
         }
 
-        Navigator.pop(context);
-      } else {
+        // 显示成功提示
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('用户名已存在，请选择其他用户名')),
-        );
-      }
-    } else {
-      // 登录逻辑
-      bool success = UserDatabase.validateLogin(account, password);
-      if (success) {
-        // 登录成功
-        await UserManager.saveLoginState(account);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('登录成功！')),
+          SnackBar(content: Text('登录成功')),
         );
 
-        // 通知父页面登录成功
-        if (widget.onLoginSuccess != null) {
-          widget.onLoginSuccess!(account);
-        }
-
+        // 返回主页面
         Navigator.pop(context);
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('用户名或密码错误')),
-        );
       }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${_isRegisterMode ? "注册" : "登录"}失败：${e.toString()}')),
+      );
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
     }
   }
 
@@ -950,298 +934,6 @@ class _PersonalCenterPageState extends State<PersonalCenterPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Color(0xFFF5F5F5),
-      appBar: AppBar(
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back_ios, color: Colors.black, size: 20),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Text(
-          _isRegisterMode ? '用户注册' : '个人中心',
-          style: TextStyle(
-            color: Colors.black,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        backgroundColor: Colors.white,
-        elevation: 0,
-        centerTitle: true,
-      ),
-      body: SingleChildScrollView(
-        padding: EdgeInsets.all(16),
-        child: Column(
-          children: [
-            SizedBox(height: 20),
-            // 登录表单
-            Container(
-              padding: EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
-                    blurRadius: 10,
-                    offset: Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Column(
-                children: [
-                  // 账号输入框
-                  TextField(
-                    controller: _accountController,
-                    decoration: InputDecoration(
-                      hintText: _isRegisterMode ? '请输入注册账号' : '请输入登录账号',
-                      hintStyle: TextStyle(
-                        color: Colors.grey[400],
-                        fontSize: 14,
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide(color: Colors.grey[300]!),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide(color: Colors.blue),
-                      ),
-                      contentPadding: EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 12,
-                      ),
-                      filled: true,
-                      fillColor: Color(0xFFF8F8F8),
-                    ),
-                  ),
-                  SizedBox(height: 16),
-                  // 密码输入框
-                  TextField(
-                    controller: _passwordController,
-                    obscureText: true,
-                    decoration: InputDecoration(
-                      hintText: _isRegisterMode ? '请输入注册密码' : '请输入登录密码',
-                      hintStyle: TextStyle(
-                        color: Colors.grey[400],
-                        fontSize: 14,
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide(color: Colors.grey[300]!),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide(color: Colors.blue),
-                      ),
-                      contentPadding: EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 12,
-                      ),
-                      filled: true,
-                      fillColor: Color(0xFFF8F8F8),
-                    ),
-                  ),
-                  // 确认密码输入框（仅注册模式显示）
-                  if (_isRegisterMode) ...[
-                    SizedBox(height: 16),
-                    TextField(
-                      controller: _confirmPasswordController,
-                      obscureText: true,
-                      decoration: InputDecoration(
-                        hintText: '请确认注册密码',
-                        hintStyle: TextStyle(
-                          color: Colors.grey[400],
-                          fontSize: 14,
-                        ),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(color: Colors.grey[300]!),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(color: Colors.blue),
-                        ),
-                        contentPadding: EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 12,
-                        ),
-                        filled: true,
-                        fillColor: Color(0xFFF8F8F8),
-                      ),
-                    ),
-                  ],
-                  SizedBox(height: 24),
-                  // 提交按钮
-                  SizedBox(
-                    width: double.infinity,
-                    height: 48,
-                    child: ElevatedButton(
-                      onPressed: _handleSubmit,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                      child: Text(
-                        _isRegisterMode ? '注册' : '登录',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                  ),
-                  SizedBox(height: 16),
-                  // 模式切换链接
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        _isRegisterMode ? '已有账号？' : '没有账号？',
-                        style: TextStyle(
-                          color: Colors.grey[600],
-                          fontSize: 14,
-                        ),
-                      ),
-                      GestureDetector(
-                        onTap: _toggleMode,
-                        child: Text(
-                          _isRegisterMode ? '点我登录' : '点我注册',
-                          style: TextStyle(
-                            color: Colors.blue,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            SizedBox(height: 30),
-            // 设置选项
-            Container(
-              padding: EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
-                    blurRadius: 10,
-                    offset: Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Column(
-                children: [
-                  // 开启摄像头
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        '开启摄像头',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Colors.black,
-                        ),
-                      ),
-                      Switch(
-                        value: _isCameraEnabled,
-                        onChanged: (value) {
-                          setState(() {
-                            _isCameraEnabled = value;
-                          });
-                        },
-                        activeColor: Colors.green,
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: 16),
-                  // 开启麦克风
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        '开启麦克风',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Colors.black,
-                        ),
-                      ),
-                      Switch(
-                        value: _isMicrophoneEnabled,
-                        onChanged: (value) {
-                          setState(() {
-                            _isMicrophoneEnabled = value;
-                          });
-                        },
-                        activeColor: Colors.green,
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-
-// 统一的个人中心页面 - 按照原型图设计
-class UnifiedPersonalCenterPage extends StatefulWidget {
-  final bool isLoggedIn;
-  final String username;
-  final Function(String) onLoginSuccess;
-  final VoidCallback onLogout;
-
-  const UnifiedPersonalCenterPage({
-    super.key,
-    required this.isLoggedIn,
-    required this.username,
-    required this.onLoginSuccess,
-    required this.onLogout,
-  });
-
-  @override
-  State<UnifiedPersonalCenterPage> createState() => _UnifiedPersonalCenterPageState();
-}
-
-class _UnifiedPersonalCenterPageState extends State<UnifiedPersonalCenterPage> {
-  final _formKey = GlobalKey<FormState>();
-  final _usernameController = TextEditingController();
-  final _passwordController = TextEditingController();
-  final _confirmPasswordController = TextEditingController(); // 确认密码控制器
-  bool _cameraEnabled = false;
-  bool _micEnabled = true;
-  bool _isLoading = false;
-  bool _isRegisterMode = false; // 注册/登录模式切换
-
-  @override
-  void initState() {
-    super.initState();
-    if (widget.isLoggedIn) {
-      _usernameController.text = widget.username;
-    }
-  }
-
-  @override
-  void dispose() {
-    _usernameController.dispose();
-    _passwordController.dispose();
-    _confirmPasswordController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
       backgroundColor: Color(0xFFF5F5F5), // 浅灰色背景，让卡片更突出
       appBar: AppBar(
         leading: IconButton(
@@ -1249,7 +941,7 @@ class _UnifiedPersonalCenterPageState extends State<UnifiedPersonalCenterPage> {
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
-          widget.isLoggedIn ? '个人中心' : (_isRegisterMode ? '用户注册' : '个人中心'),
+          _isRegisterMode ? '用户注册' : '个人中心',
           style: TextStyle(
             color: Colors.black,
             fontSize: 18,
@@ -1284,24 +976,14 @@ class _UnifiedPersonalCenterPageState extends State<UnifiedPersonalCenterPage> {
                   ),
                 ],
               ),
-              padding: EdgeInsets.all(10), // 还原为10px
+              padding: EdgeInsets.all(10), // 内边距改为10px
               child: Column(
                 children: [
-                  // 如果未登录，显示登录表单
-                  if (!widget.isLoggedIn) ...[
-                    _buildLoginForm(),
-                    SizedBox(height: 10), // 注册链接与设置开关区域之间的间隙改为10px
-                  ],
+                  // 登录表单内容
+                  _buildLoginForm(),
+                  SizedBox(height: 10), // 登录表单与设置区域之间的间隙
 
-                  // 如果已登录，显示用户信息
-                  if (widget.isLoggedIn) ...[
-                    _buildUserInfo(),
-                    SizedBox(height: 32),
-                    _buildLogoutButton(),
-                    SizedBox(height: 32),
-                  ],
-
-                  // 设置开关区域（登录和未登录都显示）
+                  // 设置开关区域
                   _buildSettingsSection(),
                 ],
               ),
@@ -1311,8 +993,6 @@ class _UnifiedPersonalCenterPageState extends State<UnifiedPersonalCenterPage> {
           ],
         ),
       ),
-      // 底部导航栏
-      bottomNavigationBar: _buildBottomNavigationBar(),
     );
   }
 
@@ -1330,7 +1010,7 @@ class _UnifiedPersonalCenterPageState extends State<UnifiedPersonalCenterPage> {
               border: Border.all(color: Colors.grey[300]!),
             ),
             child: TextFormField(
-              controller: _usernameController,
+              controller: _accountController,
               decoration: InputDecoration(
                 hintText: _isRegisterMode ? '请输入注册账号' : '请输入登录账号',
                 border: InputBorder.none,
@@ -1404,135 +1084,74 @@ class _UnifiedPersonalCenterPageState extends State<UnifiedPersonalCenterPage> {
             ),
           ],
 
-          SizedBox(height: 10), // 与登录按钮之间的间隙
+        SizedBox(height: 10), // 与登录按钮之间的间隙
 
-          // 登录/注册按钮
-          SizedBox(
-            width: double.infinity,
-            height: 48,
-            child: ElevatedButton(
-              onPressed: _isLoading ? null : _handleLogin,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Color(0xFF007AFF),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                elevation: 0,
+        // 登录/注册按钮
+        SizedBox(
+          width: double.infinity,
+          height: 48,
+          child: ElevatedButton(
+            onPressed: _isLoading ? null : _handleSubmit,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Color(0xFF007AFF),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
               ),
-              child: _isLoading
-                ? SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                    ),
-                  )
-                : Text(
-                    _isRegisterMode ? '注册' : '登录',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+              elevation: 0,
+            ),
+            child: _isLoading
+              ? SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                   ),
-            ),
+                )
+              : Text(
+                  _isRegisterMode ? '注册' : '登录',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                ),
           ),
+        ),
 
-          SizedBox(height: 10), // 登录按钮与注册链接之间的间隙改为10px
+        SizedBox(height: 10), // 登录按钮与注册链接之间的间隙改为10px
 
-          // 注册链接（带边框）
-          Container(
-            padding: EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-            decoration: BoxDecoration(
-              border: Border.all(
-                color: Colors.grey[300]!,
-                width: 1,
-              ),
-              borderRadius: BorderRadius.circular(8),
+        // 注册链接（带边框）
+        Container(
+          padding: EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: Colors.grey[300]!,
+              width: 1,
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Flexible(
+                child: Text(
                   _isRegisterMode ? '已有账号？' : '没有账号？',
                   style: TextStyle(color: Colors.grey[600], fontSize: 14),
                 ),
-                GestureDetector(
-                  onTap: _toggleMode,
-                  child: Text(
-                    _isRegisterMode ? '点我登录' : '点我注册',
-                    style: TextStyle(
-                      color: Color(0xFF007AFF),
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                    ),
+              ),
+              GestureDetector(
+                onTap: _toggleMode,
+                child: Text(
+                  _isRegisterMode ? '点我登录' : '点我注册',
+                  style: TextStyle(
+                    color: Color(0xFF007AFF),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
+        ),
         ],
-      ),
-    );
-  }
-
-  // 构建用户信息区域
-  Widget _buildUserInfo() {
-    return Column(
-      children: [
-        // 用户头像
-        CircleAvatar(
-          radius: 40,
-          backgroundColor: Colors.blue,
-          child: Icon(
-            Icons.person,
-            size: 40,
-            color: Colors.white,
-          ),
-        ),
-
-        SizedBox(height: 16),
-
-        // 用户名
-        Text(
-          widget.username,
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            color: Colors.black87,
-          ),
-        ),
-
-        SizedBox(height: 8),
-
-        Text(
-          '已登录',
-          style: TextStyle(
-            fontSize: 14,
-            color: Colors.grey[600],
-          ),
-        ),
-      ],
-    );
-  }
-
-  // 构建退出登录按钮
-  Widget _buildLogoutButton() {
-    return SizedBox(
-      width: double.infinity,
-      height: 48,
-      child: ElevatedButton(
-        onPressed: _handleLogout,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.red,
-          foregroundColor: Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
-          elevation: 0,
-        ),
-        child: Text(
-          '退出登录',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
-        ),
       ),
     );
   }
@@ -1544,10 +1163,10 @@ class _UnifiedPersonalCenterPageState extends State<UnifiedPersonalCenterPage> {
         // 开启摄像头
         _buildSettingItem(
           title: '开启摄像头',
-          value: _cameraEnabled,
+          value: _isCameraEnabled,
           onChanged: (value) {
             setState(() {
-              _cameraEnabled = value;
+              _isCameraEnabled = value;
             });
           },
         ),
@@ -1566,10 +1185,10 @@ class _UnifiedPersonalCenterPageState extends State<UnifiedPersonalCenterPage> {
         // 开启麦克风
         _buildSettingItem(
           title: '开启麦克风',
-          value: _micEnabled,
+          value: _isMicrophoneEnabled,
           onChanged: (value) {
             setState(() {
-              _micEnabled = value;
+              _isMicrophoneEnabled = value;
             });
           },
         ),
@@ -1604,171 +1223,7 @@ class _UnifiedPersonalCenterPageState extends State<UnifiedPersonalCenterPage> {
     );
   }
 
-  // 构建底部导航栏
-  Widget _buildBottomNavigationBar() {
-    return Container(
-      height: 80,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border(
-          top: BorderSide(color: Colors.grey[200]!, width: 1),
-        ),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _buildBottomNavItem(
-            icon: Icons.home,
-            label: '首页',
-            onTap: () {
-              Navigator.pop(context);
-            },
-          ),
-          _buildBottomNavItem(
-            icon: Icons.add_circle_outline,
-            label: '加入会议',
-            onTap: () {
-              // TODO: 实现加入会议功能
-            },
-          ),
-          _buildBottomNavItem(
-            icon: Icons.person,
-            label: '我的',
-            isSelected: true,
-            onTap: () {
-              // 当前页面，不需要操作
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  // 构建底部导航项
-  Widget _buildBottomNavItem({
-    required IconData icon,
-    required String label,
-    bool isSelected = false,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            icon,
-            color: isSelected ? Color(0xFF007AFF) : Colors.grey[600],
-            size: 24,
-          ),
-          SizedBox(height: 4),
-          Text(
-            label,
-            style: TextStyle(
-              color: isSelected ? Color(0xFF007AFF) : Colors.grey[600],
-              fontSize: 12,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // 处理登录/注册
-  Future<void> _handleLogin() async {
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
-
-    setState(() {
-      _isLoading = true;
-    });
-
-    try {
-      String username = _usernameController.text.trim();
-      String password = _passwordController.text.trim();
-
-      if (_isRegisterMode) {
-        // 注册逻辑
-        String confirmPassword = _confirmPasswordController.text.trim();
-
-        if (password != confirmPassword) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('两次密码输入不一致')),
-          );
-          return;
-        }
-
-        // 模拟注册请求
-        await Future.delayed(Duration(seconds: 1));
-
-        // 显示注册成功消息
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('注册成功，请登录')),
-        );
-
-        // 切换到登录模式
-        setState(() {
-          _isRegisterMode = false;
-          _usernameController.clear();
-          _passwordController.clear();
-          _confirmPasswordController.clear();
-        });
-      } else {
-        // 登录逻辑
-        // 模拟登录请求
-        await Future.delayed(Duration(seconds: 1));
-
-        // 保存登录状态
-        await UserManager.saveLoginState(username);
-
-        // 通知父页面登录成功
-        widget.onLoginSuccess(username);
-
-        // 显示成功提示
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('登录成功')),
-        );
-
-        // 返回主页面
-        Navigator.pop(context);
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${_isRegisterMode ? "注册" : "登录"}失败：${e.toString()}')),
-      );
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
-    }
-  }
-
-  // 切换登录/注册模式
-  void _toggleMode() {
-    setState(() {
-      _isRegisterMode = !_isRegisterMode;
-      _usernameController.clear();
-      _passwordController.clear();
-      _confirmPasswordController.clear();
-    });
-  }
-
-  // 处理退出登录
-  Future<void> _handleLogout() async {
-    // 清除登录状态
-    await UserManager.clearLoginState();
-
-    // 通知父页面
-    widget.onLogout();
-
-    // 显示退出成功提示
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('已退出登录')),
-    );
-
-    // 返回主页面
-    Navigator.pop(context);
-  }
 }
+
+
 
