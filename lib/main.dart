@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'screens/video_conference_screen.dart';
+import 'screens/simple_profile_screen.dart';
 import 'services/app_updater.dart';
 import 'core/hot_update_manager.dart';
 import 'widgets/version_float_widget.dart';
@@ -176,18 +177,31 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   void _handleUserIconTap() {
-    // 统一跳转到个人中心页面，不管是否登录
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => UnifiedPersonalCenterPage(
-          isLoggedIn: _isLoggedIn,
-          username: _currentUsername,
-          onLoginSuccess: _onLoginSuccess,
-          onLogout: _onLogout,
+    if (_isLoggedIn) {
+      // 已登录 - 使用简洁的个人中心页面
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => SimpleProfileScreen(
+            username: _currentUsername,
+            onLogout: _onLogout,
+          ),
         ),
-      ),
-    );
+      );
+    } else {
+      // 未登录 - 使用统一个人中心页面（包含登录功能）
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => UnifiedPersonalCenterPage(
+            isLoggedIn: _isLoggedIn,
+            username: _currentUsername,
+            onLoginSuccess: _onLoginSuccess,
+            onLogout: _onLogout,
+          ),
+        ),
+      );
+    }
   }
 
   void _toggleUserMenu() {
