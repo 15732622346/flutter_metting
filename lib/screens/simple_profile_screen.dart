@@ -89,12 +89,12 @@ class SimpleProfileScreen extends StatelessWidget {
       body: SingleChildScrollView(
         child: Column(
           children: [
-            SizedBox(height: 30),
-            
+            SizedBox(height: 15), // 减少顶部间距：30→15
+
             // 用户信息区域 - 白色背景，无阴影
             Container(
               width: double.infinity,
-              padding: EdgeInsets.symmetric(vertical: 30),
+              padding: EdgeInsets.symmetric(vertical: 20), // 减少容器内间距：30→20
               decoration: BoxDecoration(
                 color: Colors.white,
               ),
@@ -110,8 +110,8 @@ class SimpleProfileScreen extends StatelessWidget {
                       color: Colors.white,
                     ),
                   ),
-                  SizedBox(height: 16),
-                  
+                  SizedBox(height: 12), // 减少头像到用户名间距：16→12
+
                   // 用户名显示
                   Text(
                     username,
@@ -121,8 +121,8 @@ class SimpleProfileScreen extends StatelessWidget {
                       color: Colors.black,
                     ),
                   ),
-                  SizedBox(height: 8),
-                  
+                  SizedBox(height: 6), // 减少用户名间距：8→6
+
                   // 灰色用户名重复显示（如图片中的样式）
                   Text(
                     username,
@@ -134,8 +134,8 @@ class SimpleProfileScreen extends StatelessWidget {
                 ],
               ),
             ),
-            
-            SizedBox(height: 20),
+
+            SizedBox(height: 15), // 减少到菜单间距：20→15
             
             // 功能菜单 - 白色背景，简洁设计
             Container(

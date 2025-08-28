@@ -41,6 +41,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
   // 模拟聊天消息
   List<ChatMessage> _chatMessages = [];
   bool _isInputFocused = false; // 输入框焦点状态
+  bool _isSending = false; // 发送状态，防止按钮冲突
 
 
 
@@ -609,17 +610,25 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
                 // 发送按钮 - 聚焦时显示
                 SizedBox(
                   height: 40, // 与输入框高度完全一致
-                  child: ElevatedButton(
-                    onPressed: () => _sendMessage(_messageController.text),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFff5722), // #ff5722 橙红色
-                      foregroundColor: Colors.white,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque, // 确保整个区域都能响应点击
+                    onTap: () => _sendMessage(_messageController.text),
+                    child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 20),
-                      shape: RoundedRectangleBorder(
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFff5722), // #ff5722 橙红色
                         borderRadius: BorderRadius.circular(4),
                       ),
+                      alignment: Alignment.center,
+                      child: const Text(
+                        '发送',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.white,
+                          fontWeight: FontWeight.normal,
+                        ),
+                      ),
                     ),
-                    child: const Text('发送', style: TextStyle(fontSize: 14)),
                   ),
                 ),
               ] else ...[
@@ -682,7 +691,11 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
     });
 
     _messageController.clear();
-    _inputFocusNode.unfocus(); // 失去焦点，隐藏发送按钮
+
+    // 延迟失去焦点，确保点击事件完整执行（参考HTML实现）
+    Future.delayed(const Duration(milliseconds: 50), () {
+      _inputFocusNode.unfocus();
+    });
 
     // 简单的滚动到底部，Flutter会自动处理键盘适配
     Future.delayed(const Duration(milliseconds: 100), () {
