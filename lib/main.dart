@@ -121,6 +121,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   late Animation<double> _inviteCodeSlideAnimation;
   final TextEditingController _inviteCodeController = TextEditingController();
   String _selectedMeetingTitle = '';
+  bool _isMeetingCardClickable = true; // 防抖标志
 
   // 用户登录状态
   bool _isLoggedIn = false;
@@ -225,6 +226,13 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   void _handleMeetingCardTap(String title, bool isActive) {
+    // 防抖处理
+    if (!_isMeetingCardClickable) return;
+
+    setState(() {
+      _isMeetingCardClickable = false;
+    });
+
     if (isActive) {
       // 进行中的会议 - 弹出邀请码面板
       _showInviteCodePanel(title);
@@ -232,9 +240,21 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       // 已结束的会议 - 显示结束提示
       _showMeetingEndedMessage();
     }
+
+    // 1秒后重置点击状态
+    Future.delayed(Duration(seconds: 1), () {
+      if (mounted) {
+        setState(() {
+          _isMeetingCardClickable = true;
+        });
+      }
+    });
   }
 
   void _showMeetingEndedMessage() {
+    // 先清除现有的Banner，避免叠加
+    ScaffoldMessenger.of(context).clearMaterialBanners();
+
     ScaffoldMessenger.of(context).showMaterialBanner(
       MaterialBanner(
         content: Row(
@@ -270,7 +290,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
     // 2秒后自动隐藏
     Future.delayed(Duration(seconds: 2), () {
-      ScaffoldMessenger.of(context).hideCurrentMaterialBanner();
+      if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentMaterialBanner();
+      }
     });
   }
 
@@ -335,26 +357,26 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         preferredSize: Size.fromHeight(38), // 进一步减少AppBar高度到48*4/5=38
         child: AppBar(
           leading: Container(
-            margin: EdgeInsets.only(left: 10), // 进一步减少左边距到12*4/5=10
+            margin: EdgeInsets.only(left: 10),
             child: Image.asset(
               'assets/images/logo.png',
-              height: 14, // 进一步减少logo高度到18*4/5=14
+              height: 17, // 扩大1/5：14 * 1.2 = 16.8 ≈ 17
               fit: BoxFit.contain,
             ),
           ),
-          leadingWidth: 72, // 进一步减少leading宽度到90*4/5=72
+          leadingWidth: 86, // 扩大1/5：72 * 1.2 = 86.4 ≈ 86
           actions: [
             Padding(
               padding: EdgeInsets.only(right: 10), // 进一步减少右边距到12*4/5=10
               child: GestureDetector(
                 onTap: _handleUserIconTap,
                 child: CircleAvatar(
-                  radius: 12, // 进一步减少头像半径到15*4/5=12
+                  radius: 14, // 扩大1/5：12 * 1.2 = 14.4 ≈ 14
                   backgroundColor: _isLoggedIn ? Colors.blue : Colors.grey[300],
                   child: Icon(
                     Icons.person,
                     color: _isLoggedIn ? Colors.white : Colors.grey[600],
-                    size: 13, // 进一步减少图标尺寸到16*4/5=13
+                    size: 16, // 扩大1/5：13 * 1.2 = 15.6 ≈ 16
                   ),
                 ),
               ),
@@ -368,13 +390,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       backgroundColor: Color(0xFFF5F5F5),
       body: Stack(
         children: [
-          ListView.separated(
-        padding: EdgeInsets.symmetric(horizontal: 0, vertical: 0),
+          ListView.builder(
+        padding: EdgeInsets.symmetric(horizontal: 0, vertical: 8), // 上下各8px，配合卡片的8px margin形成16px间隙
         itemCount: 4,
-        separatorBuilder: (context, index) => Container(
-          height: 1,
-          color: Color(0xFFE5E5E5),
-        ),
         itemBuilder: (context, index) {
           return _buildMeetingCard(
             title: '# Tiktok流量与变现系统课 把握新机遇',
@@ -1422,9 +1440,11 @@ class _UnifiedPersonalCenterPageState extends State<UnifiedPersonalCenterPage> {
   final _formKey = GlobalKey<FormState>();
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController(); // 确认密码控制器
   bool _cameraEnabled = false;
   bool _micEnabled = true;
   bool _isLoading = false;
+  bool _isRegisterMode = false; // 注册/登录模式切换
 
   @override
   void initState() {
@@ -1438,6 +1458,7 @@ class _UnifiedPersonalCenterPageState extends State<UnifiedPersonalCenterPage> {
   void dispose() {
     _usernameController.dispose();
     _passwordController.dispose();
+    _confirmPasswordController.dispose();
     super.dispose();
   }
 
@@ -1451,7 +1472,7 @@ class _UnifiedPersonalCenterPageState extends State<UnifiedPersonalCenterPage> {
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
-          '个人中心',
+          widget.isLoggedIn ? '个人中心' : (_isRegisterMode ? '用户注册' : '个人中心'),
           style: TextStyle(
             color: Colors.black,
             fontSize: 18,
@@ -1534,7 +1555,7 @@ class _UnifiedPersonalCenterPageState extends State<UnifiedPersonalCenterPage> {
             child: TextFormField(
               controller: _usernameController,
               decoration: InputDecoration(
-                hintText: '请输入登录账号',
+                hintText: _isRegisterMode ? '请输入注册账号' : '请输入登录账号',
                 border: InputBorder.none,
                 contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 hintStyle: TextStyle(color: Colors.grey[500]),
@@ -1561,7 +1582,7 @@ class _UnifiedPersonalCenterPageState extends State<UnifiedPersonalCenterPage> {
               controller: _passwordController,
               obscureText: true,
               decoration: InputDecoration(
-                hintText: '请输入登录密码',
+                hintText: _isRegisterMode ? '请输入注册密码' : '请输入登录密码',
                 border: InputBorder.none,
                 contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 hintStyle: TextStyle(color: Colors.grey[500]),
@@ -1575,9 +1596,40 @@ class _UnifiedPersonalCenterPageState extends State<UnifiedPersonalCenterPage> {
             ),
           ),
 
-          SizedBox(height: 10), // 密码输入框与登录按钮之间的间隙改为10px
+          // 确认密码输入框（仅注册模式显示）
+          if (_isRegisterMode) ...[
+            SizedBox(height: 10),
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.grey[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey[300]!),
+              ),
+              child: TextFormField(
+                controller: _confirmPasswordController,
+                obscureText: true,
+                decoration: InputDecoration(
+                  hintText: '请确认注册密码',
+                  border: InputBorder.none,
+                  contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  hintStyle: TextStyle(color: Colors.grey[500]),
+                ),
+                validator: (value) {
+                  if (_isRegisterMode && (value == null || value.isEmpty)) {
+                    return '请确认密码';
+                  }
+                  if (_isRegisterMode && value != _passwordController.text) {
+                    return '两次密码输入不一致';
+                  }
+                  return null;
+                },
+              ),
+            ),
+          ],
 
-          // 登录按钮
+          SizedBox(height: 10), // 与登录按钮之间的间隙
+
+          // 登录/注册按钮
           SizedBox(
             width: double.infinity,
             height: 48,
@@ -1601,7 +1653,7 @@ class _UnifiedPersonalCenterPageState extends State<UnifiedPersonalCenterPage> {
                     ),
                   )
                 : Text(
-                    '登录',
+                    _isRegisterMode ? '注册' : '登录',
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
                   ),
             ),
@@ -1623,13 +1675,13 @@ class _UnifiedPersonalCenterPageState extends State<UnifiedPersonalCenterPage> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Text(
-                  '没有账号？',
+                  _isRegisterMode ? '已有账号？' : '没有账号？',
                   style: TextStyle(color: Colors.grey[600], fontSize: 14),
                 ),
                 GestureDetector(
-                  onTap: _handleRegister,
+                  onTap: _toggleMode,
                   child: Text(
-                    '点我注册',
+                    _isRegisterMode ? '点我登录' : '点我注册',
                     style: TextStyle(
                       color: Color(0xFF007AFF),
                       fontSize: 14,
@@ -1845,7 +1897,7 @@ class _UnifiedPersonalCenterPageState extends State<UnifiedPersonalCenterPage> {
     );
   }
 
-  // 处理登录
+  // 处理登录/注册
   Future<void> _handleLogin() async {
     if (!_formKey.currentState!.validate()) {
       return;
@@ -1856,26 +1908,57 @@ class _UnifiedPersonalCenterPageState extends State<UnifiedPersonalCenterPage> {
     });
 
     try {
-      // 模拟登录请求
-      await Future.delayed(Duration(seconds: 1));
+      String username = _usernameController.text.trim();
+      String password = _passwordController.text.trim();
 
-      // 保存登录状态
-      await UserManager.saveLoginState(_usernameController.text);
+      if (_isRegisterMode) {
+        // 注册逻辑
+        String confirmPassword = _confirmPasswordController.text.trim();
 
-      // 通知父页面登录成功
-      widget.onLoginSuccess(_usernameController.text);
+        if (password != confirmPassword) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('两次密码输入不一致')),
+          );
+          return;
+        }
 
-      // 显示成功提示
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('登录成功')),
-      );
+        // 模拟注册请求
+        await Future.delayed(Duration(seconds: 1));
 
-      // 返回主页面
-      Navigator.pop(context);
+        // 显示注册成功消息
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('注册成功，请登录')),
+        );
 
+        // 切换到登录模式
+        setState(() {
+          _isRegisterMode = false;
+          _usernameController.clear();
+          _passwordController.clear();
+          _confirmPasswordController.clear();
+        });
+      } else {
+        // 登录逻辑
+        // 模拟登录请求
+        await Future.delayed(Duration(seconds: 1));
+
+        // 保存登录状态
+        await UserManager.saveLoginState(username);
+
+        // 通知父页面登录成功
+        widget.onLoginSuccess(username);
+
+        // 显示成功提示
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('登录成功')),
+        );
+
+        // 返回主页面
+        Navigator.pop(context);
+      }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('登录失败：${e.toString()}')),
+        SnackBar(content: Text('${_isRegisterMode ? "注册" : "登录"}失败：${e.toString()}')),
       );
     } finally {
       setState(() {
@@ -1884,12 +1967,14 @@ class _UnifiedPersonalCenterPageState extends State<UnifiedPersonalCenterPage> {
     }
   }
 
-  // 处理注册
-  void _handleRegister() {
-    // TODO: 实现注册功能
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('注册功能待实现')),
-    );
+  // 切换登录/注册模式
+  void _toggleMode() {
+    setState(() {
+      _isRegisterMode = !_isRegisterMode;
+      _usernameController.clear();
+      _passwordController.clear();
+      _confirmPasswordController.clear();
+    });
   }
 
   // 处理退出登录
