@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'screens/video_conference_screen.dart';
 import 'services/app_updater.dart';
@@ -86,6 +87,14 @@ class VideoMeetingApp extends StatelessWidget {
       theme: ThemeData(
         primarySwatch: Colors.blue,
         useMaterial3: true,
+        // 设置应用栏主题
+        appBarTheme: AppBarTheme(
+          systemOverlayStyle: SystemUiOverlayStyle(
+            statusBarColor: Colors.blue, // 状态栏背景色设为蓝色
+            statusBarIconBrightness: Brightness.light, // 状态栏图标为白色
+            statusBarBrightness: Brightness.dark, // iOS状态栏内容为白色
+          ),
+        ),
       ),
       home: const HomePage(),
       debugShowCheckedModeBanner: false,
@@ -166,21 +175,18 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   void _handleUserIconTap() {
-    if (_isLoggedIn) {
-      // 已登录 - 跳转到个人中心页面
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => UserProfilePage(
-            username: _currentUsername,
-            onLogout: _onLogout,
-          ),
+    // 统一跳转到个人中心页面，不管是否登录
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => UnifiedPersonalCenterPage(
+          isLoggedIn: _isLoggedIn,
+          username: _currentUsername,
+          onLoginSuccess: _onLoginSuccess,
+          onLogout: _onLogout,
         ),
-      );
-    } else {
-      // 未登录 - 显示登录注册抽屉
-      _toggleUserMenu();
-    }
+      ),
+    );
   }
 
   void _toggleUserMenu() {
@@ -325,35 +331,39 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        leading: Container(
-          margin: EdgeInsets.only(left: 16),
-          child: Image.asset(
-            'assets/images/logo.png',
-            height: 22.4,
-            fit: BoxFit.contain,
+      appBar: PreferredSize(
+        preferredSize: Size.fromHeight(38), // 进一步减少AppBar高度到48*4/5=38
+        child: AppBar(
+          leading: Container(
+            margin: EdgeInsets.only(left: 10), // 进一步减少左边距到12*4/5=10
+            child: Image.asset(
+              'assets/images/logo.png',
+              height: 14, // 进一步减少logo高度到18*4/5=14
+              fit: BoxFit.contain,
+            ),
           ),
-        ),
-        leadingWidth: 105,
-        actions: [
-          Padding(
-            padding: EdgeInsets.only(right: 16),
-            child: GestureDetector(
-              onTap: _handleUserIconTap,
-              child: CircleAvatar(
-                radius: 18,
-                backgroundColor: _isLoggedIn ? Colors.blue : Colors.grey[300],
-                child: Icon(
-                  Icons.person,
-                  color: _isLoggedIn ? Colors.white : Colors.grey[600],
-                  size: 20,
+          leadingWidth: 72, // 进一步减少leading宽度到90*4/5=72
+          actions: [
+            Padding(
+              padding: EdgeInsets.only(right: 10), // 进一步减少右边距到12*4/5=10
+              child: GestureDetector(
+                onTap: _handleUserIconTap,
+                child: CircleAvatar(
+                  radius: 12, // 进一步减少头像半径到15*4/5=12
+                  backgroundColor: _isLoggedIn ? Colors.blue : Colors.grey[300],
+                  child: Icon(
+                    Icons.person,
+                    color: _isLoggedIn ? Colors.white : Colors.grey[600],
+                    size: 13, // 进一步减少图标尺寸到16*4/5=13
+                  ),
                 ),
               ),
             ),
-          ),
-        ],
-        backgroundColor: Colors.white,
-        elevation: 0,
+          ],
+          backgroundColor: Colors.white,
+          elevation: 0,
+          toolbarHeight: 38, // 设置工具栏高度到38
+        ),
       ),
       backgroundColor: Color(0xFFF5F5F5),
       body: Stack(
@@ -1386,6 +1396,517 @@ class UserProfilePage extends StatelessWidget {
         color: Colors.grey[200],
       ),
     );
+  }
+}
+
+// 统一的个人中心页面 - 按照原型图设计
+class UnifiedPersonalCenterPage extends StatefulWidget {
+  final bool isLoggedIn;
+  final String username;
+  final Function(String) onLoginSuccess;
+  final VoidCallback onLogout;
+
+  const UnifiedPersonalCenterPage({
+    super.key,
+    required this.isLoggedIn,
+    required this.username,
+    required this.onLoginSuccess,
+    required this.onLogout,
+  });
+
+  @override
+  State<UnifiedPersonalCenterPage> createState() => _UnifiedPersonalCenterPageState();
+}
+
+class _UnifiedPersonalCenterPageState extends State<UnifiedPersonalCenterPage> {
+  final _formKey = GlobalKey<FormState>();
+  final _usernameController = TextEditingController();
+  final _passwordController = TextEditingController();
+  bool _cameraEnabled = false;
+  bool _micEnabled = true;
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.isLoggedIn) {
+      _usernameController.text = widget.username;
+    }
+  }
+
+  @override
+  void dispose() {
+    _usernameController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Color(0xFFF5F5F5), // 浅灰色背景，让卡片更突出
+      appBar: AppBar(
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back_ios, color: Colors.black, size: 20),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Text(
+          '个人中心',
+          style: TextStyle(
+            color: Colors.black,
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        centerTitle: true,
+      ),
+      body: SingleChildScrollView(
+        padding: EdgeInsets.zero, // 左右不留间隙
+        child: Column(
+          children: [
+            SizedBox(height: 8), // 顶部留8px间隙
+
+            // 主内容卡片容器
+            Container(
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border.all(
+                  color: Colors.grey[300]!,
+                  width: 1,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.grey.withOpacity(0.1),
+                    spreadRadius: 1,
+                    blurRadius: 3,
+                    offset: Offset(0, 1),
+                  ),
+                ],
+              ),
+              padding: EdgeInsets.all(10), // 还原为10px
+              child: Column(
+                children: [
+                  // 如果未登录，显示登录表单
+                  if (!widget.isLoggedIn) ...[
+                    _buildLoginForm(),
+                    SizedBox(height: 10), // 注册链接与设置开关区域之间的间隙改为10px
+                  ],
+
+                  // 如果已登录，显示用户信息
+                  if (widget.isLoggedIn) ...[
+                    _buildUserInfo(),
+                    SizedBox(height: 32),
+                    _buildLogoutButton(),
+                    SizedBox(height: 32),
+                  ],
+
+                  // 设置开关区域（登录和未登录都显示）
+                  _buildSettingsSection(),
+                ],
+              ),
+            ),
+
+            SizedBox(height: 20), // 底部间距
+          ],
+        ),
+      ),
+      // 底部导航栏
+      bottomNavigationBar: _buildBottomNavigationBar(),
+    );
+  }
+
+  // 构建登录表单
+  Widget _buildLoginForm() {
+    return Form(
+      key: _formKey,
+      child: Column(
+        children: [
+          // 用户名输入框
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.grey[50],
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.grey[300]!),
+            ),
+            child: TextFormField(
+              controller: _usernameController,
+              decoration: InputDecoration(
+                hintText: '请输入登录账号',
+                border: InputBorder.none,
+                contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                hintStyle: TextStyle(color: Colors.grey[500]),
+              ),
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return '请输入用户名';
+                }
+                return null;
+              },
+            ),
+          ),
+
+          SizedBox(height: 10), // 两个输入框之间的间隙改为10px
+
+          // 密码输入框
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.grey[50],
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.grey[300]!),
+            ),
+            child: TextFormField(
+              controller: _passwordController,
+              obscureText: true,
+              decoration: InputDecoration(
+                hintText: '请输入登录密码',
+                border: InputBorder.none,
+                contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                hintStyle: TextStyle(color: Colors.grey[500]),
+              ),
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return '请输入密码';
+                }
+                return null;
+              },
+            ),
+          ),
+
+          SizedBox(height: 10), // 密码输入框与登录按钮之间的间隙改为10px
+
+          // 登录按钮
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: ElevatedButton(
+              onPressed: _isLoading ? null : _handleLogin,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Color(0xFF007AFF),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                elevation: 0,
+              ),
+              child: _isLoading
+                ? SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  )
+                : Text(
+                    '登录',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                  ),
+            ),
+          ),
+
+          SizedBox(height: 10), // 登录按钮与注册链接之间的间隙改为10px
+
+          // 注册链接（带边框）
+          Container(
+            padding: EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+            decoration: BoxDecoration(
+              border: Border.all(
+                color: Colors.grey[300]!,
+                width: 1,
+              ),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  '没有账号？',
+                  style: TextStyle(color: Colors.grey[600], fontSize: 14),
+                ),
+                GestureDetector(
+                  onTap: _handleRegister,
+                  child: Text(
+                    '点我注册',
+                    style: TextStyle(
+                      color: Color(0xFF007AFF),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 构建用户信息区域
+  Widget _buildUserInfo() {
+    return Column(
+      children: [
+        // 用户头像
+        CircleAvatar(
+          radius: 40,
+          backgroundColor: Colors.blue,
+          child: Icon(
+            Icons.person,
+            size: 40,
+            color: Colors.white,
+          ),
+        ),
+
+        SizedBox(height: 16),
+
+        // 用户名
+        Text(
+          widget.username,
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: Colors.black87,
+          ),
+        ),
+
+        SizedBox(height: 8),
+
+        Text(
+          '已登录',
+          style: TextStyle(
+            fontSize: 14,
+            color: Colors.grey[600],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // 构建退出登录按钮
+  Widget _buildLogoutButton() {
+    return SizedBox(
+      width: double.infinity,
+      height: 48,
+      child: ElevatedButton(
+        onPressed: _handleLogout,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.red,
+          foregroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+          elevation: 0,
+        ),
+        child: Text(
+          '退出登录',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+        ),
+      ),
+    );
+  }
+
+  // 构建设置开关区域
+  Widget _buildSettingsSection() {
+    return Column(
+      children: [
+        // 开启摄像头
+        _buildSettingItem(
+          title: '开启摄像头',
+          value: _cameraEnabled,
+          onChanged: (value) {
+            setState(() {
+              _cameraEnabled = value;
+            });
+          },
+        ),
+
+        SizedBox(height: 5), // 开启摄像头与分割线之间的间隙
+
+        // 分割线
+        Divider(
+          height: 1,
+          color: Colors.grey[300],
+          thickness: 1,
+        ),
+
+        SizedBox(height: 5), // 分割线与开启麦克风之间的间隙
+
+        // 开启麦克风
+        _buildSettingItem(
+          title: '开启麦克风',
+          value: _micEnabled,
+          onChanged: (value) {
+            setState(() {
+              _micEnabled = value;
+            });
+          },
+        ),
+      ],
+    );
+  }
+
+  // 构建单个设置项
+  Widget _buildSettingItem({
+    required String title,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          title,
+          style: TextStyle(
+            fontSize: 16,
+            color: Colors.black87,
+          ),
+        ),
+        Switch(
+          value: value,
+          onChanged: onChanged,
+          activeColor: Colors.green,
+          inactiveThumbColor: Colors.grey[400],
+          inactiveTrackColor: Colors.grey[300],
+        ),
+      ],
+    );
+  }
+
+  // 构建底部导航栏
+  Widget _buildBottomNavigationBar() {
+    return Container(
+      height: 80,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(
+          top: BorderSide(color: Colors.grey[200]!, width: 1),
+        ),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          _buildBottomNavItem(
+            icon: Icons.home,
+            label: '首页',
+            onTap: () {
+              Navigator.pop(context);
+            },
+          ),
+          _buildBottomNavItem(
+            icon: Icons.add_circle_outline,
+            label: '加入会议',
+            onTap: () {
+              // TODO: 实现加入会议功能
+            },
+          ),
+          _buildBottomNavItem(
+            icon: Icons.person,
+            label: '我的',
+            isSelected: true,
+            onTap: () {
+              // 当前页面，不需要操作
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 构建底部导航项
+  Widget _buildBottomNavItem({
+    required IconData icon,
+    required String label,
+    bool isSelected = false,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            icon,
+            color: isSelected ? Color(0xFF007AFF) : Colors.grey[600],
+            size: 24,
+          ),
+          SizedBox(height: 4),
+          Text(
+            label,
+            style: TextStyle(
+              color: isSelected ? Color(0xFF007AFF) : Colors.grey[600],
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 处理登录
+  Future<void> _handleLogin() async {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      // 模拟登录请求
+      await Future.delayed(Duration(seconds: 1));
+
+      // 保存登录状态
+      await UserManager.saveLoginState(_usernameController.text);
+
+      // 通知父页面登录成功
+      widget.onLoginSuccess(_usernameController.text);
+
+      // 显示成功提示
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('登录成功')),
+      );
+
+      // 返回主页面
+      Navigator.pop(context);
+
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('登录失败：${e.toString()}')),
+      );
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  // 处理注册
+  void _handleRegister() {
+    // TODO: 实现注册功能
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('注册功能待实现')),
+    );
+  }
+
+  // 处理退出登录
+  Future<void> _handleLogout() async {
+    // 清除登录状态
+    await UserManager.clearLoginState();
+
+    // 通知父页面
+    widget.onLogout();
+
+    // 显示退出成功提示
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('已退出登录')),
+    );
+
+    // 返回主页面
+    Navigator.pop(context);
   }
 }
 
