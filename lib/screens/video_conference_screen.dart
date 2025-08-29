@@ -332,7 +332,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
               bottom: 5,
               right: 5,
               child: GestureDetector(
-                onTap: _toggleSmallVideoFullscreen,
+                onTap: () => _showToast('小视频全屏功能由chewie提供'),
                 child: Container(
                   width: 28,
                   height: 28,
