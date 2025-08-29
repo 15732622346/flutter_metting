@@ -33,6 +33,18 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
   // 小视频窗口状态
   bool _isSmallVideoMinimized = false;
 
+  // 视频控制状态
+  bool _showMainVideoControls = false;
+  bool _showSmallVideoControls = false;
+  bool _isMainVideoPlaying = false;
+  bool _isSmallVideoPlaying = false;
+
+  // 视频进度
+  Duration _mainVideoPosition = Duration.zero;
+  Duration _mainVideoDuration = Duration.zero;
+  Duration _smallVideoPosition = Duration.zero;
+  Duration _smallVideoDuration = Duration.zero;
+
   // 麦位和聊天数据
   int _totalMicSeats = 10;
   int _occupiedMicSeats = 8;
@@ -64,8 +76,13 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
     _messageController.dispose();
     _chatScrollController.dispose();
     _inputFocusNode.dispose();
+
+    // 移除监听器并释放视频控制器
+    _videoController?.removeListener(_updateMainVideoState);
     _videoController?.dispose();
+    _smallVideoController?.removeListener(_updateSmallVideoState);
     _smallVideoController?.dispose();
+
     super.dispose();
   }
 
@@ -85,9 +102,14 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
     _videoController!.initialize().then((_) {
       setState(() {
         _isVideoInitialized = true;
+        _isMainVideoPlaying = true;
+        _mainVideoDuration = _videoController!.value.duration;
       });
       _videoController!.play();
       _videoController!.setLooping(true);
+
+      // 添加视频状态监听器
+      _videoController!.addListener(_updateMainVideoState);
     }).catchError((error) {
       print('主视频初始化失败: $error');
     });
@@ -96,12 +118,39 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
     _smallVideoController!.initialize().then((_) {
       setState(() {
         _isSmallVideoInitialized = true;
+        _isSmallVideoPlaying = true;
+        _smallVideoDuration = _smallVideoController!.value.duration;
       });
       _smallVideoController!.play();
       _smallVideoController!.setLooping(true);
+
+      // 添加视频状态监听器
+      _smallVideoController!.addListener(_updateSmallVideoState);
     }).catchError((error) {
       print('小视频初始化失败: $error');
     });
+  }
+
+  /// 更新主视频状态
+  void _updateMainVideoState() {
+    if (_videoController != null && mounted) {
+      setState(() {
+        _isMainVideoPlaying = _videoController!.value.isPlaying;
+        _mainVideoPosition = _videoController!.value.position;
+        _mainVideoDuration = _videoController!.value.duration;
+      });
+    }
+  }
+
+  /// 更新小视频状态
+  void _updateSmallVideoState() {
+    if (_smallVideoController != null && mounted) {
+      setState(() {
+        _isSmallVideoPlaying = _smallVideoController!.value.isPlaying;
+        _smallVideoPosition = _smallVideoController!.value.position;
+        _smallVideoDuration = _smallVideoController!.value.duration;
+      });
+    }
   }
 
   /// 初始化模拟数据 - 完全匹配HTML的消息
@@ -159,50 +208,38 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
     return Container(
       color: Colors.black, // 黑色背景，完全匹配HTML
       child: _isVideoInitialized && _videoController != null
-          ? Stack(
-              children: [
-                // 视频播放器
-                SizedBox.expand(
-                  child: FittedBox(
-                    fit: BoxFit.cover,
-                    child: SizedBox(
-                      width: _videoController!.value.size.width,
-                      height: _videoController!.value.size.height,
-                      child: VideoPlayer(_videoController!),
-                    ),
-                  ),
-                ),
-                // 播放控制按钮
-                Center(
-                  child: GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        if (_videoController!.value.isPlaying) {
-                          _videoController!.pause();
-                        } else {
-                          _videoController!.play();
-                        }
-                      });
-                    },
-                    child: Container(
-                      width: 80,
-                      height: 80,
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.5),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        _videoController!.value.isPlaying
-                            ? Icons.pause
-                            : Icons.play_arrow,
-                        size: 40,
-                        color: Colors.white,
+          ? GestureDetector(
+              onTap: () {
+                setState(() {
+                  _showMainVideoControls = !_showMainVideoControls;
+                });
+                // 3秒后自动隐藏控制条
+                Future.delayed(const Duration(seconds: 3), () {
+                  if (mounted) {
+                    setState(() {
+                      _showMainVideoControls = false;
+                    });
+                  }
+                });
+              },
+              child: Stack(
+                children: [
+                  // 视频播放器
+                  SizedBox.expand(
+                    child: FittedBox(
+                      fit: BoxFit.contain, // 改为contain以完整显示视频
+                      child: SizedBox(
+                        width: _videoController!.value.size.width,
+                        height: _videoController!.value.size.height,
+                        child: VideoPlayer(_videoController!),
                       ),
                     ),
                   ),
-                ),
 
-              ],
+                  // 视频控制组件
+                  _buildMainVideoControls(),
+                ],
+              ),
             )
           : const Center(
               child: Column(
@@ -218,6 +255,187 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
               ),
             ),
     );
+  }
+
+  /// 构建主视频控制组件
+  Widget _buildMainVideoControls() {
+    if (!_showMainVideoControls) return const SizedBox.shrink();
+
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Colors.black.withOpacity(0.7),
+            Colors.transparent,
+            Colors.transparent,
+            Colors.black.withOpacity(0.7),
+          ],
+        ),
+      ),
+      child: Column(
+        children: [
+          // 顶部控制栏
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    '主视频',
+                    style: TextStyle(color: Colors.white, fontSize: 16),
+                  ),
+                ),
+                // 全屏按钮
+                IconButton(
+                  onPressed: _toggleMainVideoFullscreen,
+                  icon: const Icon(Icons.fullscreen, color: Colors.white),
+                ),
+              ],
+            ),
+          ),
+
+          const Spacer(),
+
+          // 中央播放按钮
+          Center(
+            child: GestureDetector(
+              onTap: _toggleMainVideoPlayPause,
+              child: Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.5),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  _isMainVideoPlaying ? Icons.pause : Icons.play_arrow,
+                  size: 40,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ),
+
+          const Spacer(),
+
+          // 底部控制栏
+          Container(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                // 进度条
+                Row(
+                  children: [
+                    Text(
+                      _formatDuration(_mainVideoPosition),
+                      style: const TextStyle(color: Colors.white, fontSize: 12),
+                    ),
+                    Expanded(
+                      child: Slider(
+                        value: _mainVideoDuration.inMilliseconds > 0
+                            ? _mainVideoPosition.inMilliseconds / _mainVideoDuration.inMilliseconds
+                            : 0.0,
+                        onChanged: (value) {
+                          final position = Duration(
+                            milliseconds: (value * _mainVideoDuration.inMilliseconds).round(),
+                          );
+                          _videoController?.seekTo(position);
+                        },
+                        activeColor: Colors.white,
+                        inactiveColor: Colors.white.withOpacity(0.3),
+                      ),
+                    ),
+                    Text(
+                      _formatDuration(_mainVideoDuration),
+                      style: const TextStyle(color: Colors.white, fontSize: 12),
+                    ),
+                  ],
+                ),
+
+                // 控制按钮行
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    IconButton(
+                      onPressed: _rewindMainVideo,
+                      icon: const Icon(Icons.replay_10, color: Colors.white),
+                    ),
+                    IconButton(
+                      onPressed: _toggleMainVideoPlayPause,
+                      icon: Icon(
+                        _isMainVideoPlaying ? Icons.pause : Icons.play_arrow,
+                        color: Colors.white,
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: _forwardMainVideo,
+                      icon: const Icon(Icons.forward_10, color: Colors.white),
+                    ),
+                    IconButton(
+                      onPressed: _toggleMainVideoMute,
+                      icon: Icon(
+                        _videoController?.value.volume == 0 ? Icons.volume_off : Icons.volume_up,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 主视频控制方法
+  void _toggleMainVideoPlayPause() {
+    if (_videoController != null) {
+      setState(() {
+        if (_isMainVideoPlaying) {
+          _videoController!.pause();
+        } else {
+          _videoController!.play();
+        }
+      });
+    }
+  }
+
+  void _rewindMainVideo() {
+    if (_videoController != null) {
+      final newPosition = _mainVideoPosition - const Duration(seconds: 10);
+      _videoController!.seekTo(newPosition < Duration.zero ? Duration.zero : newPosition);
+    }
+  }
+
+  void _forwardMainVideo() {
+    if (_videoController != null) {
+      final newPosition = _mainVideoPosition + const Duration(seconds: 10);
+      _videoController!.seekTo(newPosition > _mainVideoDuration ? _mainVideoDuration : newPosition);
+    }
+  }
+
+  void _toggleMainVideoMute() {
+    if (_videoController != null) {
+      setState(() {
+        _videoController!.setVolume(_videoController!.value.volume == 0 ? 1.0 : 0.0);
+      });
+    }
+  }
+
+  void _toggleMainVideoFullscreen() {
+    // TODO: 实现全屏功能
+    _showToast('主视频全屏功能开发中');
+  }
+
+  /// 格式化时间显示
+  String _formatDuration(Duration duration) {
+    String twoDigits(int n) => n.toString().padLeft(2, '0');
+    final minutes = twoDigits(duration.inMinutes.remainder(60));
+    final seconds = twoDigits(duration.inSeconds.remainder(60));
+    return '$minutes:$seconds';
   }
 
   /// 构建小视频窗口
@@ -278,14 +496,35 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
             ClipRRect(
               borderRadius: BorderRadius.circular(3),
               child: _isSmallVideoInitialized && _smallVideoController != null
-                  ? SizedBox.expand(
-                      child: FittedBox(
-                        fit: BoxFit.cover,
-                        child: SizedBox(
-                          width: _smallVideoController!.value.size.width,
-                          height: _smallVideoController!.value.size.height,
-                          child: VideoPlayer(_smallVideoController!),
-                        ),
+                  ? GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          _showSmallVideoControls = !_showSmallVideoControls;
+                        });
+                        // 2秒后自动隐藏控制条
+                        Future.delayed(const Duration(seconds: 2), () {
+                          if (mounted) {
+                            setState(() {
+                              _showSmallVideoControls = false;
+                            });
+                          }
+                        });
+                      },
+                      child: Stack(
+                        children: [
+                          SizedBox.expand(
+                            child: FittedBox(
+                              fit: BoxFit.cover,
+                              child: SizedBox(
+                                width: _smallVideoController!.value.size.width,
+                                height: _smallVideoController!.value.size.height,
+                                child: VideoPlayer(_smallVideoController!),
+                              ),
+                            ),
+                          ),
+                          // 小视频控制组件
+                          _buildSmallVideoControls(),
+                        ],
                       ),
                     )
                   : Container(
@@ -345,10 +584,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
               bottom: 5,
               right: 5,
               child: GestureDetector(
-                onTap: () {
-                  // 全屏功能
-                  _showToast('全屏功能开发中');
-                },
+                onTap: _toggleSmallVideoFullscreen,
                 child: Container(
                   width: 28,
                   height: 28,
@@ -364,13 +600,10 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
                     ],
                   ),
                   child: const Center(
-                    child: Text(
-                      '⛶',
-                      style: TextStyle(
-                        color: Colors.black,
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
+                    child: Icon(
+                      Icons.fullscreen,
+                      color: Colors.black,
+                      size: 16,
                     ),
                   ),
                 ),
@@ -380,6 +613,93 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
         ),
       ),
     );
+  }
+
+  /// 构建小视频控制组件
+  Widget _buildSmallVideoControls() {
+    if (!_showSmallVideoControls) return const SizedBox.shrink();
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(3),
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Colors.black.withOpacity(0.6),
+            Colors.transparent,
+            Colors.black.withOpacity(0.6),
+          ],
+        ),
+      ),
+      child: Column(
+        children: [
+          // 顶部信息
+          Container(
+            padding: const EdgeInsets.all(4),
+            child: const Text(
+              '小视频',
+              style: TextStyle(color: Colors.white, fontSize: 10),
+            ),
+          ),
+
+          const Spacer(),
+
+          // 中央播放按钮
+          Center(
+            child: GestureDetector(
+              onTap: _toggleSmallVideoPlayPause,
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.5),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  _isSmallVideoPlaying ? Icons.pause : Icons.play_arrow,
+                  size: 20,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ),
+
+          const Spacer(),
+
+          // 底部进度条
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            child: LinearProgressIndicator(
+              value: _smallVideoDuration.inMilliseconds > 0
+                  ? _smallVideoPosition.inMilliseconds / _smallVideoDuration.inMilliseconds
+                  : 0.0,
+              backgroundColor: Colors.white.withOpacity(0.3),
+              valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+              minHeight: 2,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 小视频控制方法
+  void _toggleSmallVideoPlayPause() {
+    if (_smallVideoController != null) {
+      setState(() {
+        if (_isSmallVideoPlaying) {
+          _smallVideoController!.pause();
+        } else {
+          _smallVideoController!.play();
+        }
+      });
+    }
+  }
+
+  void _toggleSmallVideoFullscreen() {
+    // TODO: 实现小视频全屏功能
+    _showToast('小视频全屏功能开发中');
   }
 
   /// 构建聊天区域
