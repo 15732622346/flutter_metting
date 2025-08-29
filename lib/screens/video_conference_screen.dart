@@ -35,6 +35,10 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
 
   // 小视频窗口状态
   bool _isSmallVideoMinimized = false;
+  
+  // 浮动窗口拖动位置
+  double _floatingWindowX = 0.0; // 距离右边的距离
+  double _floatingWindowY = 305.0; // 距离顶部的距离
 
 
 
@@ -222,12 +226,22 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
   Widget _buildSmallVideoWindow() {
     if (_isSmallVideoMinimized) {
       return Positioned(
-        top: 305,
-        right: 15,
+        top: _floatingWindowY,
+        right: _floatingWindowX + 15,
         child: GestureDetector(
           onTap: () {
             setState(() {
               _isSmallVideoMinimized = false;
+            });
+          },
+          onPanUpdate: (details) {
+            setState(() {
+              // 更新拖动位置，限制在屏幕边界内
+              final screenSize = MediaQuery.of(context).size;
+              _floatingWindowY = (_floatingWindowY + details.delta.dy)
+                  .clamp(0.0, screenSize.height - 30);
+              _floatingWindowX = (_floatingWindowX - details.delta.dx)
+                  .clamp(0.0, screenSize.width - 75); // 60(width) + 15(padding)
             });
           },
           child: Container(
@@ -253,9 +267,20 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
     }
 
     return Positioned(
-      top: 305,
-      right: 15,
-      child: Container(
+      top: _floatingWindowY,
+      right: _floatingWindowX + 15,
+      child: GestureDetector(
+        onPanUpdate: (details) {
+          setState(() {
+            // 更新拖动位置，限制在屏幕边界内
+            final screenSize = MediaQuery.of(context).size;
+            _floatingWindowY = (_floatingWindowY + details.delta.dy)
+                .clamp(0.0, screenSize.height - 140); // 140是小窗口高度
+            _floatingWindowX = (_floatingWindowX - details.delta.dx)
+                .clamp(0.0, screenSize.width - 135); // 120(width) + 15(padding)
+          });
+        },
+        child: Container(
         width: 120,
         height: 140,
         decoration: BoxDecoration(
@@ -360,6 +385,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
               ),
             ),
           ],
+        ),
         ),
       ),
     );
