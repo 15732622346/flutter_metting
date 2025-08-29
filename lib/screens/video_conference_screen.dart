@@ -79,14 +79,14 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
 
   /// 初始化视频播放器
   void _initializeVideos() {
-    // 主视频 - 使用免费的测试视频
+    // 主视频 - 使用HTML7中的视频链接
     _videoController = VideoPlayerController.networkUrl(
-      Uri.parse('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4'),
+      Uri.parse('https://vod.pipi.cn/fec9203cvodtransbj1251246104/4332e3ed5145403693732329697/v.f42905.mp4'),
     );
 
-    // 小视频 - 使用另一个免费测试视频
+    // 小视频 - 使用HTML7中的小视频链接
     _smallVideoController = VideoPlayerController.networkUrl(
-      Uri.parse('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4'),
+      Uri.parse('https://vod.pipi.cn/fec9203cvodtransbj1251246104/e032d17c5145403694330550266/v.f42905.mp4'),
     );
 
     // 初始化主视频
