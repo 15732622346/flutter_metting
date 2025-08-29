@@ -74,9 +74,17 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
     _chatScrollController.dispose();
     _inputFocusNode.dispose();
 
-    // 释放chewie控制器（会自动释放video控制器）
+    // 先停止视频播放
+    _videoController?.pause();
+    _smallVideoController?.pause();
+
+    // 释放chewie控制器
     _chewieController?.dispose();
     _smallChewieController?.dispose();
+
+    // 明确释放底层video控制器，确保声音完全停止
+    _videoController?.dispose();
+    _smallVideoController?.dispose();
 
     super.dispose();
   }
