@@ -165,16 +165,17 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFFFFFFF), // 纯白背景
       resizeToAvoidBottomInset: true, // 明确开启键盘自动适配（默认就是true）
-      body: Stack(
-        children: [
-          // 主容器
-          Column(
-            children: [
-              // 视频播放区域 - 固定16:9宽高比
-              AspectRatio(
-                aspectRatio: 16 / 9,
-                child: _buildVideoArea(),
-              ),
+      body: SafeArea(
+        child: Stack(
+          children: [
+            // 主容器
+            Column(
+              children: [
+                // 视频播放区域 - 固定16:9宽高比
+                AspectRatio(
+                  aspectRatio: 16 / 9,
+                  child: _buildVideoArea(),
+                ),
 
               // 聊天区域 - 填充剩余空间
               Expanded(
@@ -185,7 +186,8 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
           
           // 小视频窗口 - 浮动在右上角
           _buildSmallVideoWindow(),
-        ],
+          ],
+        ),
       ),
     );
   }
