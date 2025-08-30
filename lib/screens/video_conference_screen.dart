@@ -51,6 +51,9 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
   List<ChatMessage> _chatMessages = [];
   bool _isInputFocused = false; // 输入框焦点状态
   bool _isSending = false; // 发送状态，防止按钮冲突
+  
+  // 浮动窗口全屏按钮防抖
+  bool _isFullscreenButtonClickable = true;
 
 
 
@@ -87,6 +90,27 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
     _smallVideoController?.dispose();
 
     super.dispose();
+  }
+
+  /// 全屏按钮防抖函数
+  void _debounceFullscreenButton(VoidCallback action) {
+    if (!_isFullscreenButtonClickable) return;
+    
+    setState(() {
+      _isFullscreenButtonClickable = false;
+    });
+    
+    // 执行操作
+    action();
+    
+    // 2秒后重置点击状态（稍长一些，因为全屏操作比较重要）
+    Future.delayed(Duration(seconds: 2), () {
+      if (mounted) {
+        setState(() {
+          _isFullscreenButtonClickable = true;
+        });
+      }
+    });
   }
 
   /// 初始化视频播放器
@@ -367,7 +391,9 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
               bottom: 5,
               right: 5,
               child: GestureDetector(
-                onTap: () => _showToast('小视频全屏功能由chewie提供'),
+                onTap: () => _debounceFullscreenButton(() {
+                  _showToast('小视频全屏功能由chewie提供');
+                }),
                 child: Container(
                   width: 28,
                   height: 28,
@@ -728,15 +754,25 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
     });
   }
 
-  /// 显示提示消息
+  /// 显示提示消息 - 如果已有提示在显示则不显示新提示
   void _showToast(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        duration: const Duration(seconds: 2),
-        backgroundColor: Colors.grey[800],
-      ),
-    );
+    // 检查是否已经有SnackBar在显示
+    if (ScaffoldMessenger.of(context).mounted) {
+      final scaffoldMessenger = ScaffoldMessenger.of(context);
+      // 如果当前没有SnackBar显示，才显示新的
+      try {
+        scaffoldMessenger.showSnackBar(
+          SnackBar(
+            content: Text(message),
+            duration: const Duration(seconds: 2),
+            backgroundColor: Colors.grey[800],
+          ),
+        );
+      } catch (e) {
+        // 如果有SnackBar正在显示，会抛出异常，忽略即可
+        print('Toast already visible, ignoring new toast');
+      }
+    }
   }
 }
 

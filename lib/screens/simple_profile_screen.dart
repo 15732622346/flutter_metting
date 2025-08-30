@@ -6,7 +6,7 @@ import '../config/version_config.dart';
 /// 简洁个人中心界面 - 与图片样式完全匹配的版本
 /// 这是从 main.dart 中提取的 UserProfilePage 类
 /// 特点：简洁的白色背景，无阴影，纯净的UI设计
-class SimpleProfileScreen extends StatelessWidget {
+class SimpleProfileScreen extends StatefulWidget {
   final String username;
   final VoidCallback onLogout;
 
@@ -15,6 +15,47 @@ class SimpleProfileScreen extends StatelessWidget {
     required this.username,
     required this.onLogout,
   });
+
+  @override
+  State<SimpleProfileScreen> createState() => _SimpleProfileScreenState();
+}
+
+class _SimpleProfileScreenState extends State<SimpleProfileScreen> {
+  // 防抖标志，防止快速重复点击
+  bool _isButtonClickable = true;
+  // 提示显示状态标志
+  bool _isToastVisible = false;
+  
+  /// 防抖函数 - 防止用户快速重复点击和重复显示提示
+  void _debounceButtonClick(VoidCallback action) {
+    if (!_isButtonClickable || _isToastVisible) return;
+    
+    setState(() {
+      _isButtonClickable = false;
+      _isToastVisible = true;
+    });
+    
+    // 执行操作
+    action();
+    
+    // 1秒后重置点击状态
+    Future.delayed(Duration(seconds: 1), () {
+      if (mounted) {
+        setState(() {
+          _isButtonClickable = true;
+        });
+      }
+    });
+    
+    // 2秒后重置提示状态（与SnackBar显示时间同步）
+    Future.delayed(Duration(seconds: 2), () {
+      if (mounted) {
+        setState(() {
+          _isToastVisible = false;
+        });
+      }
+    });
+  }
 
   Future<void> _handleLogout(BuildContext context) async {
     // 显示确认对话框
@@ -56,7 +97,7 @@ class SimpleProfileScreen extends StatelessWidget {
       }
 
       // 通知父页面更新状态
-      onLogout();
+      widget.onLogout();
 
       // 返回主页面
       if (context.mounted) {
@@ -114,7 +155,7 @@ class SimpleProfileScreen extends StatelessWidget {
 
                   // 用户名显示
                   Text(
-                    username,
+                    widget.username,
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.w600,
@@ -125,7 +166,7 @@ class SimpleProfileScreen extends StatelessWidget {
 
                   // 灰色用户名重复显示（如图片中的样式）
                   Text(
-                    username,
+                    widget.username,
                     style: TextStyle(
                       fontSize: 14,
                       color: Colors.grey[600],
@@ -149,9 +190,11 @@ class SimpleProfileScreen extends StatelessWidget {
                     icon: Icons.settings,
                     title: '会议设置',
                     onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('会议设置功能开发中...')),
-                      );
+                      _debounceButtonClick(() {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('会议设置功能开发中...')),
+                        );
+                      });
                     },
                   ),
                   _buildDivider(),
@@ -161,9 +204,11 @@ class SimpleProfileScreen extends StatelessWidget {
                     icon: Icons.lock,
                     title: '修改密码',
                     onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('修改密码功能开发中...')),
-                      );
+                      _debounceButtonClick(() {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('修改密码功能开发中...')),
+                        );
+                      });
                     },
                   ),
                   _buildDivider(),
@@ -180,8 +225,10 @@ class SimpleProfileScreen extends StatelessWidget {
                       ),
                     ),
                     onTap: () async {
-                      // 使用AppUpdater的热更新功能
-                      await AppUpdater.checkAndUpdate(context);
+                      _debounceButtonClick(() async {
+                        // 使用AppUpdater的热更新功能
+                        await AppUpdater.checkAndUpdate(context);
+                      });
                     },
                   ),
                   _buildDivider(),
@@ -191,9 +238,11 @@ class SimpleProfileScreen extends StatelessWidget {
                     icon: Icons.help,
                     title: '帮助教程',
                     onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('帮助教程功能开发中...')),
-                      );
+                      _debounceButtonClick(() {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('帮助教程功能开发中...')),
+                        );
+                      });
                     },
                   ),
                 ],

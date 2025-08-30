@@ -298,12 +298,12 @@ class _MeetListPageState extends State<MeetListPage> with TickerProviderStateMix
               child: GestureDetector(
                 onTap: _handleUserIconTap,
                 child: CircleAvatar(
-                  radius: 14, // 扩大1/5：12 * 1.2 = 14.4 ≈ 14
+                  radius: 12, // 改为12，直径24像素
                   backgroundColor: _isLoggedIn ? Colors.blue : Colors.grey[300],
                   child: Icon(
                     Icons.person,
                     color: _isLoggedIn ? Colors.white : Colors.grey[600],
-                    size: 16, // 扩大1/5：13 * 1.2 = 15.6 ≈ 16
+                    size: 15, // 只减少1px：16 → 15
                   ),
                 ),
               ),
@@ -318,7 +318,7 @@ class _MeetListPageState extends State<MeetListPage> with TickerProviderStateMix
       body: Stack(
         children: [
           ListView.builder(
-        padding: EdgeInsets.symmetric(horizontal: 0, vertical: 8), // 上下各8px，配合卡片的8px margin形成16px间隙
+        padding: EdgeInsets.only(left: 0, right: 0, top: 8, bottom: 24), // 顶部8px，底部24px，配合卡片margin形成顶部16px、底部32px间隙
         itemCount: 4,
         itemBuilder: (context, index) {
           return _buildMeetingCard(
