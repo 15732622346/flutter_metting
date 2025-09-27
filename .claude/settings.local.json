@@ -3,7 +3,20 @@
     "allow": [
       "Bash(flutter:*)",
       "Bash(rm:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Read(D:\\code\\metting/**)",
+      "Read(D:\\code\\metting\\manager\\meet-manager/**)",
+      "Read(D:\\code\\metting\\manager\\meet-manager/**)",
+      "Read(D:\\code\\metting\\meet2/**)",
+      "Read(D:\\code\\metting\\meet2/**)",
+      "Read(D:\\code\\metting\\meet2\\lib/**)",
+      "Read(D:\\code\\metting\\meet2\\app\\rooms\\[roomName]/**)",
+      "Read(D:\\code\\metting\\meet2\\app\\rooms\\[roomName]/**)",
+      "Read(D:\\code\\metting\\hvtvmobile\\meet-mobile/**)",
+      "Read(D:\\code\\metting\\hvtvmobile\\meet-mobile\\lib/**)",
+      "Read(D:\\code\\metting\\hvtvmobile\\meet-mobile\\app\\rooms\\[roomName]/**)",
+      "Read(D:\\code\\metting\\hvtvmobile\\meet-mobile\\components/**)",
+      "Bash(\"C:\\Program Files\\Git\\usr\\bin\\tar.exe\" -czf \"C:\\Users\\Administrator\\Downloads\\meet-manager.tar.gz\" -C \"C:\\Users\\Administrator\\Downloads\" meet-manager)"
     ],
     "deny": [],
     "ask": []
