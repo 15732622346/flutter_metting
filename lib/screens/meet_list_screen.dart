@@ -1,5 +1,8 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../core/user_manager.dart';
+import '../models/room_model.dart';
+import '../services/room_list_service.dart';
 import 'video_conference_screen.dart';
 import 'simple_profile_screen.dart';
 import 'login_register_screen.dart';
@@ -12,10 +15,16 @@ class MeetListPage extends StatefulWidget {
   State<MeetListPage> createState() => _MeetListPageState();
 }
 
-class _MeetListPageState extends State<MeetListPage> with TickerProviderStateMixin {
+class _MeetListPageState extends State<MeetListPage>
+    with TickerProviderStateMixin {
   bool _isUserMenuVisible = false;
   late AnimationController _animationController;
   late Animation<double> _slideAnimation;
+
+  final RoomListService _roomListService = RoomListService();
+  List<Room> _rooms = const <Room>[];
+  bool _isLoadingRooms = false;
+  String? _roomListError;
 
   // 邀请码验证面板相关
   bool _isInviteCodePanelVisible = false;
@@ -23,6 +32,7 @@ class _MeetListPageState extends State<MeetListPage> with TickerProviderStateMix
   late Animation<double> _inviteCodeSlideAnimation;
   final TextEditingController _inviteCodeController = TextEditingController();
   String _selectedMeetingTitle = '';
+  String _selectedRoomId = '';
   bool _isMeetingCardClickable = true; // 防抖标志
 
   // 用户登录状态
@@ -59,6 +69,41 @@ class _MeetListPageState extends State<MeetListPage> with TickerProviderStateMix
 
     // 检查登录状态
     _checkLoginState();
+
+    _loadRooms();
+  }
+
+  Future<void> _loadRooms() async {
+    setState(() {
+      _isLoadingRooms = true;
+      _roomListError = null;
+    });
+
+    try {
+      final rooms = await _roomListService.fetchRooms();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _rooms = rooms;
+        _isLoadingRooms = false;
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _roomListError = _readableRoomError(error);
+        _isLoadingRooms = false;
+      });
+    }
+  }
+
+  String _readableRoomError(Object error) {
+    final message = error.toString();
+    return message.startsWith('Exception: ')
+        ? message.substring('Exception: '.length)
+        : message;
   }
 
   Future<void> _checkLoginState() async {
@@ -113,10 +158,11 @@ class _MeetListPageState extends State<MeetListPage> with TickerProviderStateMix
     });
   }
 
-  void _showInviteCodePanel(String meetingTitle) {
+  void _showInviteCodePanel(String meetingTitle, String roomId) {
     setState(() {
       _isInviteCodePanelVisible = true;
       _selectedMeetingTitle = meetingTitle;
+      _selectedRoomId = roomId;
     });
     _inviteCodeAnimationController.forward();
   }
@@ -126,11 +172,12 @@ class _MeetListPageState extends State<MeetListPage> with TickerProviderStateMix
       setState(() {
         _isInviteCodePanelVisible = false;
         _inviteCodeController.clear();
+        _selectedRoomId = '';
       });
     });
   }
 
-  void _handleMeetingCardTap(String title, bool isActive) {
+  void _handleMeetingCardTap(String title, String roomId, bool isActive) {
     // 防抖处理
     if (!_isMeetingCardClickable) return;
 
@@ -140,7 +187,7 @@ class _MeetListPageState extends State<MeetListPage> with TickerProviderStateMix
 
     if (isActive) {
       // 进行中的会议 - 弹出邀请码面板
-      _showInviteCodePanel(title);
+      _showInviteCodePanel(title, roomId);
     } else {
       // 已结束的会议 - 显示结束提示
       _showMeetingEndedMessage();
@@ -212,7 +259,12 @@ class _MeetListPageState extends State<MeetListPage> with TickerProviderStateMix
     }
 
     // 这里可以添加实际的验证逻辑
-    print('验证邀请码: $code，会议: $_selectedMeetingTitle');
+    debugPrint('?????: ' +
+        code +
+        '???: ' +
+        _selectedMeetingTitle +
+        '???ID: ' +
+        _selectedRoomId);
 
     // 验证成功后关闭面板
     _hideInviteCodePanel();
@@ -222,8 +274,11 @@ class _MeetListPageState extends State<MeetListPage> with TickerProviderStateMix
       context,
       MaterialPageRoute(
         builder: (context) => VideoConferenceScreen(
-          roomName: _selectedMeetingTitle ?? '未知房间',
-          roomId: 'room_${DateTime.now().millisecondsSinceEpoch}',
+          roomName:
+              _selectedMeetingTitle.isNotEmpty ? _selectedMeetingTitle : '????',
+          roomId: _selectedRoomId.isNotEmpty
+              ? _selectedRoomId
+              : 'room_${DateTime.now().millisecondsSinceEpoch}',
           inviteCode: code,
         ),
       ),
@@ -247,6 +302,143 @@ class _MeetListPageState extends State<MeetListPage> with TickerProviderStateMix
       _isLoggedIn = true;
       _currentUsername = username;
     });
+  }
+
+  Widget _buildRoomListSection() {
+    const listPadding = EdgeInsets.only(left: 0, right: 0, top: 8, bottom: 24);
+
+    if (_isLoadingRooms && _rooms.isEmpty) {
+      return RefreshIndicator(
+        onRefresh: _loadRooms,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: listPadding,
+          children: const [
+            SizedBox(
+              height: 240,
+              child: Center(
+                child: CircularProgressIndicator(),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_roomListError != null && _rooms.isEmpty) {
+      return RefreshIndicator(
+        onRefresh: _loadRooms,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 32),
+          children: [
+            _buildRoomErrorState(),
+          ],
+        ),
+      );
+    }
+
+    if (_rooms.isEmpty) {
+      return RefreshIndicator(
+        onRefresh: _loadRooms,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 32),
+          children: [
+            _buildEmptyRoomState(),
+          ],
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _loadRooms,
+      child: ListView.builder(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: listPadding,
+        itemCount: _rooms.length,
+        itemBuilder: (context, index) {
+          final room = _rooms[index];
+          return _buildMeetingCard(
+            title: room.roomName,
+            roomId: room.roomId,
+            host: room.hostDisplayName,
+            status: room.statusText,
+            isActive: room.isActive,
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildRoomErrorState() {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 24),
+      alignment: Alignment.center,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.error_outline,
+            color: Colors.redAccent,
+            size: 32,
+          ),
+          const SizedBox(height: 12),
+          Text(
+            _roomListError ?? '??????',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.grey[700],
+              fontSize: 14,
+            ),
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: () {
+              _loadRooms();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+            ),
+            child: const Text('????'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyRoomState() {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 48),
+      alignment: Alignment.center,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.meeting_room_outlined,
+            color: Colors.blueGrey,
+            size: 32,
+          ),
+          const SizedBox(height: 12),
+          Text(
+            '???????',
+            style: TextStyle(
+              color: Colors.grey[700],
+              fontSize: 14,
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextButton(
+            onPressed: () {
+              _loadRooms();
+            },
+            child: const Text('????'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -289,20 +481,8 @@ class _MeetListPageState extends State<MeetListPage> with TickerProviderStateMix
       backgroundColor: Color(0xFFF5F5F5),
       body: Stack(
         children: [
-          ListView.builder(
-        padding: EdgeInsets.only(left: 0, right: 0, top: 8, bottom: 24), // 顶部8px，底部24px，配合卡片margin形成顶部16px、底部32px间隙
-        itemCount: 4,
-        itemBuilder: (context, index) {
-          return _buildMeetingCard(
-            title: '# Tiktok流量与变现系统课 把握新机遇',
-            roomId: 'r-8346bafa',
-            host: 'wangwu',
-            status: index == 3 ? '已结束' : '进行中',
-            isActive: index != 3,
-          );
-        },
-      ),
-          
+          _buildRoomListSection(),
+
           // 用户菜单下拉面板
           if (_isUserMenuVisible)
             Positioned(
@@ -353,12 +533,14 @@ class _MeetListPageState extends State<MeetListPage> with TickerProviderStateMix
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: Colors.blue,
                                   foregroundColor: Colors.white,
-                                  padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                                  padding: EdgeInsets.symmetric(
+                                      horizontal: 20, vertical: 8),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(4),
                                   ),
                                 ),
-                                child: Text('注册', style: TextStyle(fontSize: 14)),
+                                child:
+                                    Text('注册', style: TextStyle(fontSize: 14)),
                               ),
                               SizedBox(width: 12),
                               ElevatedButton(
@@ -369,12 +551,14 @@ class _MeetListPageState extends State<MeetListPage> with TickerProviderStateMix
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: Color(0xFF4A4A4A),
                                   foregroundColor: Colors.white,
-                                  padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                                  padding: EdgeInsets.symmetric(
+                                      horizontal: 20, vertical: 8),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(4),
                                   ),
                                 ),
-                                child: Text('登录', style: TextStyle(fontSize: 14)),
+                                child:
+                                    Text('登录', style: TextStyle(fontSize: 14)),
                               ),
                             ],
                             Spacer(),
@@ -382,7 +566,8 @@ class _MeetListPageState extends State<MeetListPage> with TickerProviderStateMix
                             GestureDetector(
                               onTap: _toggleUserMenu,
                               child: Padding(
-                                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                padding: EdgeInsets.symmetric(
+                                    horizontal: 16, vertical: 8),
                                 child: Text(
                                   '关闭',
                                   style: TextStyle(
@@ -441,9 +626,11 @@ class _MeetListPageState extends State<MeetListPage> with TickerProviderStateMix
                             children: [
                               // 顶部标题栏
                               Container(
-                                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                                padding: EdgeInsets.symmetric(
+                                    horizontal: 16, vertical: 16),
                                 child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
                                   children: [
                                     Text(
                                       '邀请码验证',
@@ -470,7 +657,8 @@ class _MeetListPageState extends State<MeetListPage> with TickerProviderStateMix
                                 child: Padding(
                                   padding: EdgeInsets.all(16),
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       SizedBox(height: 20),
                                       Text(
@@ -491,12 +679,16 @@ class _MeetListPageState extends State<MeetListPage> with TickerProviderStateMix
                                             fontSize: 14,
                                           ),
                                           border: OutlineInputBorder(
-                                            borderRadius: BorderRadius.circular(8),
-                                            borderSide: BorderSide(color: Colors.grey[300]!),
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                            borderSide: BorderSide(
+                                                color: Colors.grey[300]!),
                                           ),
                                           focusedBorder: OutlineInputBorder(
-                                            borderRadius: BorderRadius.circular(8),
-                                            borderSide: BorderSide(color: Colors.blue),
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                            borderSide:
+                                                BorderSide(color: Colors.blue),
                                           ),
                                           contentPadding: EdgeInsets.symmetric(
                                             horizontal: 12,
@@ -515,7 +707,8 @@ class _MeetListPageState extends State<MeetListPage> with TickerProviderStateMix
                                             backgroundColor: Colors.blue,
                                             foregroundColor: Colors.white,
                                             shape: RoundedRectangleBorder(
-                                              borderRadius: BorderRadius.circular(8),
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
                                             ),
                                           ),
                                           child: Text(
@@ -581,7 +774,7 @@ class _MeetListPageState extends State<MeetListPage> with TickerProviderStateMix
                   fit: BoxFit.fitWidth,
                   width: double.infinity,
                 ),
-                
+
                 // 状态标签 - 右上角
                 Positioned(
                   top: 12,
@@ -602,12 +795,13 @@ class _MeetListPageState extends State<MeetListPage> with TickerProviderStateMix
                     ),
                   ),
                 ),
-                
+
                 // 中央播放按钮
                 Positioned.fill(
                   child: Center(
                     child: GestureDetector(
-                      onTap: () => _handleMeetingCardTap(title, isActive),
+                      onTap: () =>
+                          _handleMeetingCardTap(title, roomId, isActive),
                       child: Container(
                         width: 60,
                         height: 60,
@@ -634,7 +828,7 @@ class _MeetListPageState extends State<MeetListPage> with TickerProviderStateMix
               ],
             ),
           ),
-          
+
           // 底部信息区域 - 白色背景
           Container(
             padding: EdgeInsets.all(16),
@@ -679,9 +873,11 @@ class _MeetListPageState extends State<MeetListPage> with TickerProviderStateMix
                     ),
                     Spacer(),
                     GestureDetector(
-                      onTap: () => _handleMeetingCardTap(title, isActive),
+                      onTap: () =>
+                          _handleMeetingCardTap(title, roomId, isActive),
                       child: Container(
-                        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        padding:
+                            EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                         decoration: BoxDecoration(
                           color: Colors.blue,
                           borderRadius: BorderRadius.circular(16),
