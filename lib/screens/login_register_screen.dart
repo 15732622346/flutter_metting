@@ -1,62 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
-// 用户状态管理
-class UserManager {
-  static const String _loginStateKey = 'isLoggedIn';
-  static const String _usernameKey = 'username';
-
-  // 保存登录状态
-  static Future<void> saveLoginState(String username) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_loginStateKey, true);
-    await prefs.setString(_usernameKey, username);
-  }
-
-  // 获取登录状态
-  static Future<Map<String, dynamic>> getLoginState() async {
-    final prefs = await SharedPreferences.getInstance();
-    final isLoggedIn = prefs.getBool(_loginStateKey) ?? false;
-    final username = prefs.getString(_usernameKey) ?? '';
-    return {'isLoggedIn': isLoggedIn, 'username': username};
-  }
-
-  // 清除登录状态
-  static Future<void> clearLoginState() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_loginStateKey);
-    await prefs.remove(_usernameKey);
-  }
-}
-
-// 模拟用户数据库
-class UserDatabase {
-  static List<Map<String, String>> users = [
-    {'username': 'admin', 'password': '123456'},
-    {'username': 'user1', 'password': 'password'},
-    {'username': 'test', 'password': 'test123'},
-  ];
-
-  // 检查用户是否存在
-  static bool userExists(String username) {
-    return users.any((user) => user['username'] == username);
-  }
-
-  // 验证登录
-  static bool validateLogin(String username, String password) {
-    return users.any((user) =>
-        user['username'] == username && user['password'] == password);
-  }
-
-  // 注册新用户
-  static bool registerUser(String username, String password) {
-    if (userExists(username)) {
-      return false; // 用户已存在
-    }
-    users.add({'username': username, 'password': password});
-    return true;
-  }
-}
+import '../core/user_manager.dart';
+import '../services/gateway_api_service.dart';
 
 // 登录注册页面
 class LoginRegisterPage extends StatefulWidget {
@@ -78,6 +23,7 @@ class _LoginRegisterPageState extends State<LoginRegisterPage> {
   final TextEditingController _accountController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _confirmPasswordController = TextEditingController();
+  final GatewayApiService _gatewayService = GatewayApiService();
   bool _isCameraEnabled = false;
   bool _isMicrophoneEnabled = true;
   late bool _isRegisterMode;
@@ -102,64 +48,107 @@ class _LoginRegisterPageState extends State<LoginRegisterPage> {
       return;
     }
 
+    FocusScope.of(context).unfocus();
+
     setState(() {
       _isLoading = true;
     });
 
+    final messenger = ScaffoldMessenger.of(context);
+    final username = _accountController.text.trim();
+    final password = _passwordController.text.trim();
+
     try {
-      String account = _accountController.text.trim();
-      String password = _passwordController.text.trim();
-
       if (_isRegisterMode) {
-        // 注册逻辑
-        String confirmPassword = _confirmPasswordController.text.trim();
-
+        final confirmPassword = _confirmPasswordController.text.trim();
         if (password != confirmPassword) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('两次密码输入不一致')),
+          messenger.showSnackBar(
+            const SnackBar(content: Text('两次输入的密码不一致，请重新确认')),
+          );
+          return;
+        }
+        if (password.length < 6) {
+          messenger.showSnackBar(
+            const SnackBar(content: Text('密码长度至少 6 位')),
           );
           return;
         }
 
-        // 模拟注册请求
-        await Future.delayed(Duration(seconds: 1));
-
-        // 显示注册成功消息
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('注册成功，请登录')),
+        final registerResult = await _gatewayService.register(
+          username: username,
+          password: password,
+          nickname: username,
         );
 
-        // 切换到登录模式
+        if (!registerResult.success) {
+          messenger.showSnackBar(
+            SnackBar(
+              content: Text(registerResult.error ?? registerResult.message ?? '注册失败，请稍后重试'),
+            ),
+          );
+          return;
+        }
+
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(registerResult.message ?? '注册成功，请使用账号密码登录'),
+          ),
+        );
+
         setState(() {
           _isRegisterMode = false;
-          _accountController.clear();
+          _accountController.text = username;
           _passwordController.clear();
           _confirmPasswordController.clear();
         });
-      } else {
-        // 登录逻辑
-        // 模拟登录请求
-        await Future.delayed(Duration(seconds: 1));
+        return;
+      }
 
-        // 保存登录状态
-        await UserManager.saveLoginState(account);
+      final loginResult = await _gatewayService.login(
+        username: username,
+        password: password,
+      );
 
-        // 通知父页面登录成功
-        if (widget.onLoginSuccess != null) {
-          widget.onLoginSuccess!(account);
-        }
+      if (!loginResult.success || !loginResult.hasJwtToken) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(loginResult.error ?? loginResult.message ?? '登录失败，请稍后重试'),
+          ),
+        );
+        return;
+      }
 
-        // 返回主页面
+      final resolvedUsername =
+          (loginResult.userName?.trim().isNotEmpty ?? false) ? loginResult.userName!.trim() : username;
+
+      await UserManager.saveLoginState(
+        username: resolvedUsername,
+        extraData: loginResult.toStorageJson(),
+      );
+
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(loginResult.message ?? '登录成功'),
+        ),
+      );
+
+      widget.onLoginSuccess?.call(resolvedUsername);
+
+      if (mounted) {
         Navigator.pop(context);
       }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${_isRegisterMode ? "注册" : "登录"}失败：${e.toString()}')),
+    } catch (error) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text("${_isRegisterMode ? '注册' : '登录'}失败: $error"),
+        ),
       );
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -288,6 +277,9 @@ class _LoginRegisterPageState extends State<LoginRegisterPage> {
               validator: (value) {
                 if (value == null || value.isEmpty) {
                   return '请输入密码';
+                }
+                if (_isRegisterMode && value.length < 6) {
+                  return '密码长度至少 6 位';
                 }
                 return null;
               },

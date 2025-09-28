@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import '../core/user_manager.dart';
 import '../services/app_updater.dart';
+import '../services/gateway_api_service.dart';
 import '../config/version_config.dart';
 
 /// 简洁个人中心界面 - 与图片样式完全匹配的版本
@@ -21,6 +22,7 @@ class SimpleProfileScreen extends StatefulWidget {
 }
 
 class _SimpleProfileScreenState extends State<SimpleProfileScreen> {
+  final GatewayApiService _gatewayService = GatewayApiService();
   // 防抖标志，防止快速重复点击
   bool _isButtonClickable = true;
   // 提示显示状态标志
@@ -84,10 +86,16 @@ class _SimpleProfileScreenState extends State<SimpleProfileScreen> {
     );
 
     if (shouldLogout == true) {
+      try {
+        final storedData = await UserManager.getStoredUserData();
+        final jwtToken = (storedData?['jwtToken'] ?? storedData?['jwt_token'] ?? storedData?['accessToken']) as String?;
+        await _gatewayService.logout(jwtToken: jwtToken);
+      } catch (error) {
+        // 忽略退出过程中的网络异常
+      }
+
       // 清除登录状态
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('isLoggedIn');
-      await prefs.remove('username');
+      await UserManager.clearLoginState();
 
       // 显示退出成功提示
       if (context.mounted) {
@@ -99,7 +107,7 @@ class _SimpleProfileScreenState extends State<SimpleProfileScreen> {
       // 通知父页面更新状态
       widget.onLogout();
 
-      // 返回主页面
+      // 返回主页
       if (context.mounted) {
         Navigator.pop(context);
       }

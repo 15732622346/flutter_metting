@@ -1,36 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import '../core/user_manager.dart';
 import 'video_conference_screen.dart';
 import 'simple_profile_screen.dart';
 import 'login_register_screen.dart';
-
-// 用户状态管理
-class UserManager {
-  static const String _loginStateKey = 'isLoggedIn';
-  static const String _usernameKey = 'username';
-
-  // 保存登录状态
-  static Future<void> saveLoginState(String username) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_loginStateKey, true);
-    await prefs.setString(_usernameKey, username);
-  }
-
-  // 获取登录状态
-  static Future<Map<String, dynamic>> getLoginState() async {
-    final prefs = await SharedPreferences.getInstance();
-    final isLoggedIn = prefs.getBool(_loginStateKey) ?? false;
-    final username = prefs.getString(_usernameKey) ?? '';
-    return {'isLoggedIn': isLoggedIn, 'username': username};
-  }
-
-  // 清除登录状态
-  static Future<void> clearLoginState() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_loginStateKey);
-    await prefs.remove(_usernameKey);
-  }
-}
 
 // 首页 - 会议列表
 class MeetListPage extends StatefulWidget {
