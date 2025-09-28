@@ -1,64 +1,41 @@
 import 'dart:convert';
 
-import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
 import '../models/room_model.dart';
+import 'gateway_api_service.dart';
 
 class RoomListService {
-  RoomListService._internal() {
-    _dio = Dio(
-      BaseOptions(
-        baseUrl: _baseUrl,
-        connectTimeout: _timeout,
-        receiveTimeout: _timeout,
-        headers: const {
-          'Content-Type': 'application/json; charset=utf-8',
-          'Accept': 'application/json',
-        },
-      ),
-    );
-  }
+  RoomListService._internal();
 
   static final RoomListService _instance = RoomListService._internal();
 
   factory RoomListService() => _instance;
 
-  static const String _baseUrl = 'https://ht.pge006.com';
-  static const Duration _timeout = Duration(seconds: 10);
-
-  late final Dio _dio;
+  final GatewayApiService _gateway = GatewayApiService();
 
   Future<List<Room>> fetchRooms({int page = 1}) async {
     try {
-      final response = await _dio.get<dynamic>(
-        '/api/v1/rooms/list',
-        queryParameters: {
-          'page': page,
-        },
-      );
+      final response = await _gateway.fetchRoomList(page: page);
+      if (_responseFailed(response)) {
+        final message =
+            _readErrorMessage(response) ?? '获取房间列表失败，请稍后重试';
+        throw Exception(message);
+      }
 
-      final rooms = _extractRoomList(response.data) ?? const [];
+      final rooms = _extractRoomList(response) ?? const [];
       return rooms
           .map(_normalizeRoomPayload)
           .whereType<Map<String, dynamic>>()
           .map(Room.fromJson)
           .toList(growable: false);
-    } on DioException catch (error, stackTrace) {
-      debugPrint('????????: ${error.message}');
-      if (error.response?.data != null) {
-        debugPrint('????????: ${error.response?.data}');
+    } catch (error, stackTrace) {
+      debugPrint('房间列表请求失败: $error');
+      if (error is Exception) {
+        Error.throwWithStackTrace(error, stackTrace);
       }
       Error.throwWithStackTrace(
-        Exception(
-          _readErrorMessage(error.response?.data) ?? '??????????????',
-        ),
-        stackTrace,
-      );
-    } catch (error, stackTrace) {
-      debugPrint('????????: $error');
-      Error.throwWithStackTrace(
-        Exception('??????????????'),
+        Exception('获取房间列表失败，请稍后重试'),
         stackTrace,
       );
     }
@@ -75,6 +52,7 @@ class RoomListService {
       map['list'],
       map['items'],
       map['data'],
+      map['payload'],
       map['result'],
     ];
 
@@ -169,5 +147,16 @@ class RoomListService {
       }
     }
     return null;
+  }
+
+  bool _responseFailed(Map<String, dynamic> response) {
+    final successValue = response['success'];
+    if (successValue is bool) {
+      return !successValue;
+    }
+    if (successValue is String) {
+      return successValue.toLowerCase() == 'false';
+    }
+    return response.containsKey('error');
   }
 }

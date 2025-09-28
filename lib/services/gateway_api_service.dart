@@ -13,7 +13,7 @@ class GatewayApiService {
         headers: const {
           'Content-Type': 'application/json; charset=utf-8',
           'Accept': 'application/json',
-          'User-Agent': 'FlutterMeetingApp/1.0.0',
+          'User-Agent': 'livekit-app/flutter-meeting/1.0.0',
         },
       ),
     );
@@ -101,6 +101,16 @@ class GatewayApiService {
     );
     return response['success'] == true;
   }
+  Future<Map<String, dynamic>> fetchRoomList({int page = 1}) async {
+    return _callGateway(
+      endpoint: '/api/v1/rooms/list',
+      method: 'GET',
+      query: {
+        'page': page,
+      },
+    );
+  }
+
   Future<Map<String, dynamic>> _callGateway({
     required String endpoint,
     required String method,
