@@ -1,9 +1,14 @@
-import 'package:flutter/material.dart';
+import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:flutter/material.dart' hide ConnectionState;
 import 'package:flutter/services.dart';
-import 'package:video_player/video_player.dart';
-import 'package:chewie/chewie.dart';
+import 'package:livekit_client/livekit_client.dart' hide RoomEvent;
 
 import '../models/room_join_data.dart';
+import '../services/livekit_service.dart';
+import '../widgets/video_track_widget.dart';
 
 /// 直播间界面
 class VideoConferenceScreen extends StatefulWidget {
@@ -23,13 +28,20 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
   final ScrollController _chatScrollController = ScrollController();
   final FocusNode _inputFocusNode = FocusNode();
 
-  // 视频播放器控制器
-  VideoPlayerController? _videoController;
-  VideoPlayerController? _smallVideoController;
-  ChewieController? _chewieController;
-  ChewieController? _smallChewieController;
-  bool _isVideoInitialized = false;
-  bool _isSmallVideoInitialized = false;
+  // LiveKit 会话状态
+  final LiveKitService _liveKitService = LiveKitService();
+  StreamSubscription<List<RemoteParticipant>>? _participantsSubscription;
+  StreamSubscription<VideoTrack?>? _localVideoTrackSubscription;
+  StreamSubscription<ConnectionState>? _connectionStateSubscription;
+  StreamSubscription<RoomEvent>? _roomEventSubscription;
+
+  List<RemoteParticipant> _remoteParticipants = const <RemoteParticipant>[];
+  VideoTrack? _primaryVideoTrack;
+  RemoteParticipant? _primaryParticipant;
+  VideoTrack? _localVideoTrack;
+  bool _isConnectingRoom = false;
+  bool _isRoomConnected = false;
+  String? _connectionError;
 
   // 小视频窗口状态
   bool _isSmallVideoMinimized = false;
@@ -57,7 +69,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
     super.initState();
     _session = widget.joinData;
     _initializeData();
-    _initializeVideos();
+    _connectToLiveKit();
 
     // 监听输入框焦点变化
     _inputFocusNode.addListener(() {
@@ -73,17 +85,12 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
     _chatScrollController.dispose();
     _inputFocusNode.dispose();
 
-    // 先停止视频播放
-    _videoController?.pause();
-    _smallVideoController?.pause();
+    _participantsSubscription?.cancel();
+    _localVideoTrackSubscription?.cancel();
+    _connectionStateSubscription?.cancel();
+    _roomEventSubscription?.cancel();
 
-    // 释放chewie控制器
-    _chewieController?.dispose();
-    _smallChewieController?.dispose();
-
-    // 明确释放底层video控制器，确保声音完全停止
-    _videoController?.dispose();
-    _smallVideoController?.dispose();
+    unawaited(_liveKitService.disconnect());
 
     super.dispose();
   }
@@ -109,68 +116,273 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
     });
   }
 
-  /// 初始化视频播放器
-  void _initializeVideos() {
-    // 主视频 - 使用HTML7中的视频链接
-    _videoController = VideoPlayerController.networkUrl(
-      Uri.parse(
-          'https://vod.pipi.cn/fec9203cvodtransbj1251246104/4332e3ed5145403693732329697/v.f42905.mp4'),
-    );
+  /// 连接 LiveKit 房间并监听状态
 
-    // 小视频 - 使用HTML7中的小视频链接
-    _smallVideoController = VideoPlayerController.networkUrl(
-      Uri.parse(
-          'https://vod.pipi.cn/fec9203cvodtransbj1251246104/e032d17c5145403694330550266/v.f42905.mp4'),
-    );
-
-    // 初始化主视频
-    _videoController!.initialize().then((_) {
+  Future<void> _connectToLiveKit() async {
+    if (_session.liveKitToken.isEmpty || _session.wsUrl.isEmpty) {
       setState(() {
-        _isVideoInitialized = true;
+        _connectionError = '缺少房间连接信息';
+        _isConnectingRoom = false;
+        _isRoomConnected = false;
       });
+      return;
+    }
 
-      // 创建chewie控制器
-      _chewieController = ChewieController(
-        videoPlayerController: _videoController!,
-        autoPlay: true,
-        looping: true,
-        showControls: true,
-        allowFullScreen: true,
-        materialProgressColors: ChewieProgressColors(
-          playedColor: const Color(0xFF388e3c),
-          handleColor: const Color(0xFF388e3c),
-          backgroundColor: Colors.grey,
-          bufferedColor: Colors.grey.shade300,
-        ),
-        hideControlsTimer: const Duration(seconds: 3),
-      );
-    }).catchError((error) {
-      print('主视频初始化失败: $error');
+    setState(() {
+      _isConnectingRoom = true;
+      _connectionError = null;
     });
 
-    // 初始化小视频
-    _smallVideoController!.initialize().then((_) {
-      setState(() {
-        _isSmallVideoInitialized = true;
+    try {
+      await _liveKitService.connectToRoom(
+        _session.wsUrl,
+        _session.liveKitToken,
+      );
+
+      _connectionStateSubscription?.cancel();
+      _connectionStateSubscription =
+          _liveKitService.connectionState.listen((state) {
+        if (!mounted) return;
+        setState(() {
+          _isRoomConnected = state == ConnectionState.connected;
+          _isConnectingRoom = state == ConnectionState.connecting ||
+              state == ConnectionState.reconnecting;
+          if (state == ConnectionState.disconnected && _isRoomConnected) {
+            _connectionError ??= '房间连接已断开';
+          }
+        });
       });
 
-      // 创建小视频chewie控制器
-      _smallChewieController = ChewieController(
-        videoPlayerController: _smallVideoController!,
-        autoPlay: true,
-        looping: true,
-        showControls: true,
-        allowFullScreen: true,
-        materialProgressColors: ChewieProgressColors(
-          playedColor: const Color(0xFF388e3c),
-          handleColor: const Color(0xFF388e3c),
-          backgroundColor: Colors.grey,
-          bufferedColor: Colors.grey.shade300,
-        ),
-        hideControlsTimer: const Duration(seconds: 2),
-      );
-    }).catchError((error) {
-      print('小视频初始化失败: $error');
+      _participantsSubscription?.cancel();
+      _participantsSubscription =
+          _liveKitService.participants.listen((participants) {
+        if (!mounted) return;
+        setState(() {
+          _remoteParticipants = participants;
+          _occupiedMicSeats = participants.length + 1;
+        });
+        _updatePrimaryVideoTrack(participants: participants);
+      });
+
+      _localVideoTrackSubscription?.cancel();
+      _localVideoTrackSubscription =
+          _liveKitService.localVideoTrack.listen((track) {
+        if (!mounted) return;
+        setState(() {
+          _localVideoTrack = track;
+        });
+      });
+
+      _roomEventSubscription?.cancel();
+      _roomEventSubscription = _liveKitService.events.listen(_handleRoomEvent);
+
+      final initialRemotes =
+          _liveKitService.room?.remoteParticipants.values.toList() ??
+              const <RemoteParticipant>[];
+
+      if (mounted) {
+        setState(() {
+          _remoteParticipants = initialRemotes;
+          _occupiedMicSeats = initialRemotes.length + 1;
+        });
+      }
+
+      _updatePrimaryVideoTrack(participants: initialRemotes);
+
+      final initialLocalTrack = _liveKitService
+                  .room?.localParticipant?.videoTrackPublications.isNotEmpty ==
+              true
+          ? _liveKitService.room!.localParticipant!.videoTrackPublications.first
+              .track as VideoTrack?
+          : null;
+
+      if (initialLocalTrack != null && mounted) {
+        setState(() {
+          _localVideoTrack = initialLocalTrack;
+        });
+      }
+
+      setState(() {
+        _isConnectingRoom = false;
+        _isRoomConnected = true;
+      });
+
+      unawaited(_liveKitService.enableSpeaker(true));
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _isConnectingRoom = false;
+        _isRoomConnected = false;
+        _connectionError = error.toString();
+      });
+    }
+  }
+
+  void _handleRoomEvent(RoomEvent event) {
+    switch (event.type) {
+      case RoomEventType.trackPublished:
+      case RoomEventType.trackUnpublished:
+      case RoomEventType.participantConnected:
+      case RoomEventType.participantDisconnected:
+      case RoomEventType.roomUpdate:
+        _updatePrimaryVideoTrack();
+
+        break;
+
+      case RoomEventType.connectionError:
+        if (mounted) {
+          setState(() {
+            _connectionError = event.data['error']?.toString() ?? '房间连接异常';
+          });
+        }
+
+        break;
+
+      case RoomEventType.dataReceived:
+        _handleIncomingData(event);
+
+        break;
+
+      default:
+        break;
+    }
+  }
+
+  void _handleIncomingData(RoomEvent event) {
+    final rawData = event.data['data'];
+
+    final participant = event.data['participant'];
+
+    if (participant is LocalParticipant) {
+      return;
+    }
+
+    if (rawData is Uint8List) {
+      try {
+        final decoded = utf8.decode(rawData);
+
+        final payload = jsonDecode(decoded);
+
+        if (payload is Map<String, dynamic> && payload['type'] == 'chat') {
+          final senderName = _resolveParticipantName(participant) ??
+              payload['sender']?.toString() ??
+              '匿名用户';
+
+          final message = payload['message']?.toString() ?? decoded;
+
+          _addChatMessage(ChatMessage(
+            username: senderName,
+            message: message,
+            isSystem: false,
+            isOwn: false,
+          ));
+
+          return;
+        }
+
+        final senderName = _resolveParticipantName(participant) ?? '系统消息';
+
+        _addChatMessage(ChatMessage(
+          username: senderName,
+          message: decoded,
+          isSystem: false,
+          isOwn: false,
+        ));
+      } catch (_) {
+        final senderName = _resolveParticipantName(participant) ?? '系统消息';
+
+        _addChatMessage(ChatMessage(
+          username: senderName,
+          message: '收到了一条消息',
+          isSystem: false,
+          isOwn: false,
+        ));
+      }
+    }
+  }
+
+  void _updatePrimaryVideoTrack({List<RemoteParticipant>? participants}) {
+    final list = participants ?? _remoteParticipants;
+
+    RemoteParticipant? candidateParticipant;
+
+    VideoTrack? candidateTrack;
+
+    for (final participant in list) {
+      final track = _firstVideoTrack(participant);
+
+      if (track != null) {
+        candidateParticipant = participant;
+
+        candidateTrack = track;
+
+        break;
+      }
+    }
+
+    if (!mounted) return;
+
+    if (_primaryVideoTrack == candidateTrack &&
+        _primaryParticipant == candidateParticipant) {
+      return;
+    }
+
+    setState(() {
+      _primaryParticipant = candidateParticipant;
+
+      _primaryVideoTrack = candidateTrack;
+    });
+  }
+
+  VideoTrack? _firstVideoTrack(RemoteParticipant participant) {
+    for (final publication in participant.videoTrackPublications) {
+      final track = publication.track;
+
+      if (track is VideoTrack && publication.subscribed == true) {
+        return track;
+      }
+    }
+
+    return null;
+  }
+
+  String? _resolveParticipantName(dynamic participant) {
+    if (participant is Participant) {
+      final name = participant.name;
+
+      if (name != null && name.trim().isNotEmpty) {
+        return name.trim();
+      }
+
+      if (participant.identity.isNotEmpty) {
+        return participant.identity;
+      }
+    }
+
+    return null;
+  }
+
+  void _addChatMessage(ChatMessage message) {
+    setState(() {
+      _chatMessages.add(message);
+    });
+
+    _scheduleScrollToBottom();
+  }
+
+  void _scheduleScrollToBottom() {
+    if (!mounted) return;
+
+    Future.delayed(const Duration(milliseconds: 120), () {
+      if (!mounted) return;
+
+      if (_chatScrollController.hasClients) {
+        _chatScrollController.animateTo(
+          _chatScrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
     });
   }
 
@@ -250,23 +462,45 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
 
   /// 构建视频播放区域
   Widget _buildVideoArea() {
+    Widget content;
+
+    if (_connectionError != null) {
+      content = _buildVideoStatus(
+        _connectionError!,
+        icon: Icons.error_outline,
+      );
+    } else if (_primaryVideoTrack != null) {
+      content = VideoTrackWidget(
+        key: ValueKey(_primaryVideoTrack),
+        videoTrack: _primaryVideoTrack!,
+        fit: BoxFit.cover,
+        showName: false,
+      );
+    } else if (_localVideoTrack != null) {
+      content = VideoTrackWidget(
+        key: ValueKey('${_localVideoTrack.hashCode}-primary'),
+        videoTrack: _localVideoTrack!,
+        fit: BoxFit.cover,
+        mirror: true,
+        showName: false,
+      );
+    } else if (_isConnectingRoom || !_isRoomConnected) {
+      content = _buildVideoStatus(
+        '正在连接房间...',
+        showProgress: true,
+      );
+    } else {
+      final hostDisplay =
+          _resolveParticipantName(_primaryParticipant) ?? _moderator;
+      content = _buildVideoStatus(
+        '等待主持人 $hostDisplay 开播',
+        icon: Icons.videocam_off,
+      );
+    }
+
     return Container(
-      color: Colors.black, // 黑色背景，完全匹配HTML
-      child: _isVideoInitialized && _chewieController != null
-          ? Chewie(controller: _chewieController!)
-          : const Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  CircularProgressIndicator(color: Colors.white),
-                  SizedBox(height: 16),
-                  Text(
-                    '正在加载视频...',
-                    style: TextStyle(color: Colors.white),
-                  ),
-                ],
-              ),
-            ),
+      color: Colors.black,
+      child: content,
     );
   }
 
@@ -348,24 +582,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
               // 小视频内容
               ClipRRect(
                 borderRadius: BorderRadius.circular(3),
-                child:
-                    _isSmallVideoInitialized && _smallChewieController != null
-                        ? Chewie(controller: _smallChewieController!)
-                        : Container(
-                            width: double.infinity,
-                            height: double.infinity,
-                            color: Colors.black,
-                            child: const Center(
-                              child: SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  color: Colors.white,
-                                  strokeWidth: 2,
-                                ),
-                              ),
-                            ),
-                          ),
+                child: _buildSmallVideoContent(),
               ),
               // 控制按钮
               Positioned(
@@ -409,7 +626,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
                 right: 5,
                 child: GestureDetector(
                   onTap: () => _debounceFullscreenButton(() {
-                    _showToast('小视频全屏功能由chewie提供');
+                    _showToast('小窗全屏功能开发中');
                   }),
                   child: Container(
                     width: 28,
@@ -438,6 +655,76 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildSmallVideoContent() {
+    if (_localVideoTrack != null) {
+      return VideoTrackWidget(
+        key: ValueKey(_localVideoTrack),
+        videoTrack: _localVideoTrack!,
+        fit: BoxFit.cover,
+        mirror: true,
+        showName: false,
+      );
+    }
+
+    if (_primaryVideoTrack != null) {
+      return VideoTrackWidget(
+        key: ValueKey('${_primaryVideoTrack.hashCode}-fallback'),
+        videoTrack: _primaryVideoTrack!,
+        fit: BoxFit.cover,
+        showName: false,
+      );
+    }
+
+    return Container(
+      width: double.infinity,
+      height: double.infinity,
+      color: Colors.black,
+      child: const Center(
+        child: Icon(
+          Icons.videocam_off,
+          color: Colors.white70,
+          size: 28,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVideoStatus(String text,
+      {bool showProgress = false, IconData? icon}) {
+    final children = <Widget>[];
+
+    if (showProgress) {
+      children.add(const SizedBox(
+        width: 32,
+        height: 32,
+        child: CircularProgressIndicator(color: Colors.white),
+      ));
+    } else if (icon != null) {
+      children.add(Icon(icon, color: Colors.white70, size: 42));
+    }
+
+    children.add(Text(
+      text,
+      style: const TextStyle(color: Colors.white70),
+      textAlign: TextAlign.center,
+    ));
+
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          if (children.length > 1) ...[
+            children.first,
+            const SizedBox(height: 16),
+            children.last,
+          ] else
+            children.first,
+        ],
       ),
     );
   }
@@ -738,37 +1025,45 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
   }
 
   /// 发送消息 - 简化版，依赖Flutter自动适配
-  void _sendMessage(String message) {
-    if (message.trim().isEmpty) return;
+  Future<void> _sendMessage(String message) async {
+    final text = message.trim();
+    if (text.isEmpty || _isSending) {
+      return;
+    }
 
     setState(() {
-      _chatMessages.add(
-        ChatMessage(
-          username: '您',
-          message: message.trim(),
-          isSystem: false,
-          isOwn: true,
-        ),
-      );
+      _isSending = true;
     });
+
+    final displayName =
+        _session.participantName.isNotEmpty ? _session.participantName : '我';
+
+    _addChatMessage(ChatMessage(
+      username: displayName,
+      message: text,
+      isSystem: false,
+      isOwn: true,
+    ));
 
     _messageController.clear();
 
-    // 延迟失去焦点，确保点击事件完整执行（参考HTML实现）
     Future.delayed(const Duration(milliseconds: 50), () {
-      _inputFocusNode.unfocus();
-    });
-
-    // 简单的滚动到底部，Flutter会自动处理键盘适配
-    Future.delayed(const Duration(milliseconds: 100), () {
-      if (_chatScrollController.hasClients) {
-        _chatScrollController.animateTo(
-          _chatScrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
+      if (mounted) {
+        _inputFocusNode.unfocus();
       }
     });
+
+    try {
+      await _liveKitService.sendChatMessage(text);
+    } catch (error) {
+      _showToast('消息发送失败: $error');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSending = false;
+        });
+      }
+    }
   }
 
   /// 显示提示消息 - 如果已有提示在显示则不显示新提示
