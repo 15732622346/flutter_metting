@@ -78,6 +78,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
 
   // 浮动窗口全屏按钮防抖
   bool _isFullscreenButtonClickable = true;
+  bool _isVideoMaximized = false;
   late RoomJoinData _session;
 
   @override
@@ -106,6 +107,8 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
     _connectionStateSubscription?.cancel();
     _roomEventSubscription?.cancel();
 
+    // 离开页面时恢复默认显示与方向设置
+    unawaited(_applyDeviceOrientation(fullscreen: false));
     unawaited(_liveKitService.disconnect());
 
     super.dispose();
@@ -130,6 +133,112 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
         });
       }
     });
+  }
+
+  Future<void> _applyDeviceOrientation({required bool fullscreen}) async {
+    if (fullscreen) {
+      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+      await SystemChrome.setPreferredOrientations(const <DeviceOrientation>[
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
+    } else {
+      await _restoreSystemUI();
+      await SystemChrome.setPreferredOrientations(DeviceOrientation.values);
+    }
+  }
+
+  Future<void> _restoreSystemUI() async {
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  }
+
+  Future<void> _setVideoMaximized(bool enable) async {
+    if (_isVideoMaximized == enable) {
+      return;
+    }
+
+    await _applyDeviceOrientation(fullscreen: enable);
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _isVideoMaximized = enable;
+      if (enable) {
+        _isSmallVideoMinimized = false;
+      }
+    });
+  }
+
+  void _handleMaximizeTap() {
+    unawaited(_setVideoMaximized(true));
+  }
+
+  void _handleRestoreTap() {
+    unawaited(_setVideoMaximized(false));
+  }
+
+  Widget _buildOverlayButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    Color? backgroundColor,
+    Color? foregroundColor,
+    EdgeInsetsGeometry padding = const EdgeInsets.symmetric(
+      horizontal: 12,
+      vertical: 8,
+    ),
+    double borderRadius = 22,
+  }) {
+    final Color effectiveBackground =
+        backgroundColor ?? Colors.black.withOpacity(0.6);
+    final Color effectiveForeground = foregroundColor ?? Colors.white;
+
+    return Material(
+      color: effectiveBackground,
+      borderRadius: BorderRadius.circular(borderRadius),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(borderRadius),
+        child: Padding(
+          padding: padding,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 18, color: effectiveForeground),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  color: effectiveForeground,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFullscreenButton() {
+    return _buildOverlayButton(
+      icon: Icons.fullscreen,
+      label: '最大化',
+      onTap: _handleMaximizeTap,
+    );
+  }
+
+  Widget _buildFullscreenRestoreButton() {
+    return _buildOverlayButton(
+      icon: Icons.fullscreen_exit,
+      label: '还原',
+      onTap: _handleRestoreTap,
+      backgroundColor: Colors.white.withOpacity(0.9),
+      foregroundColor: Colors.black87,
+    );
   }
 
   /// 连接 LiveKit 房间并监听状态
@@ -762,28 +871,44 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFFFFFFF), // 纯白背景
-      resizeToAvoidBottomInset: true, // 明确开启键盘自动适配（默认就是true）
+      resizeToAvoidBottomInset: !_isVideoMaximized,
       body: SafeArea(
         child: Stack(
           children: [
-            // 主容器
-            Column(
-              children: [
-                // 视频播放区域 - 固定16:9宽高比
-                AspectRatio(
-                  aspectRatio: 16 / 9,
-                  child: _buildVideoArea(),
-                ),
+            if (_isVideoMaximized)
+              Positioned.fill(
+                child: _buildVideoArea(isFullscreen: true),
+              )
+            else
+              Column(
+                children: [
+                  // 视频播放区域 - 固定16:9宽高比
+                  AspectRatio(
+                    aspectRatio: 16 / 9,
+                    child: _buildVideoArea(),
+                  ),
 
-                // 聊天区域 - 填充剩余空间
-                Expanded(
-                  child: _buildChatSection(),
-                ),
-              ],
-            ),
+                  // 聊天区域 - 填充剩余空间
+                  Expanded(
+                    child: _buildChatSection(),
+                  ),
+                ],
+              ),
 
-            // 小视频窗口 - 浮动在右上角
-            _buildSmallVideoWindow(),
+            if (!_isVideoMaximized)
+              _buildSmallVideoWindow(),
+
+            if (_isVideoMaximized)
+              Positioned(
+                top: 0,
+                left: 0,
+                child: SafeArea(
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 12, top: 12),
+                    child: _buildFullscreenRestoreButton(),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -791,7 +916,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
   }
 
   /// 构建视频播放区域
-  Widget _buildVideoArea() {
+  Widget _buildVideoArea({bool isFullscreen = false}) {
     Widget content;
 
     if (_connectionError != null) {
@@ -835,14 +960,33 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
       );
     }
 
-    return Container(
+    final video = Container(
       color: Colors.black,
       child: content,
+    );
+
+    if (isFullscreen) {
+      return video;
+    }
+
+    return Stack(
+      children: [
+        Positioned.fill(child: video),
+        Positioned(
+          right: 16,
+          bottom: 16,
+          child: _buildFullscreenButton(),
+        ),
+      ],
     );
   }
 
   /// 构建小视频窗口
   Widget _buildSmallVideoWindow() {
+    if (_isVideoMaximized) {
+      return const SizedBox.shrink();
+    }
+
     if (_isSmallVideoMinimized) {
       return Positioned(
         top: _floatingWindowY,
