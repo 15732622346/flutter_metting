@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../core/user_manager.dart';
 import '../models/room_model.dart';
 import '../services/room_list_service.dart';
+import '../models/room_join_data.dart';
+import '../services/gateway_api_service.dart';
 import 'video_conference_screen.dart';
 import 'simple_profile_screen.dart';
 import 'login_register_screen.dart';
@@ -22,6 +24,7 @@ class _MeetListPageState extends State<MeetListPage>
   late Animation<double> _slideAnimation;
 
   final RoomListService _roomListService = RoomListService();
+  final GatewayApiService _gatewayService = GatewayApiService();
   List<Room> _rooms = const <Room>[];
   bool _isLoadingRooms = false;
   String? _roomListError;
@@ -34,6 +37,7 @@ class _MeetListPageState extends State<MeetListPage>
   String _selectedMeetingTitle = '';
   String _selectedRoomId = '';
   bool _isMeetingCardClickable = true; // 防抖标志
+  bool _isInviteSubmitting = false;
 
   // 用户登录状态
   bool _isLoggedIn = false;
@@ -163,6 +167,8 @@ class _MeetListPageState extends State<MeetListPage>
       _isInviteCodePanelVisible = true;
       _selectedMeetingTitle = meetingTitle;
       _selectedRoomId = roomId;
+      _isInviteSubmitting = false;
+      _inviteCodeController.clear();
     });
     _inviteCodeAnimationController.forward();
   }
@@ -173,6 +179,7 @@ class _MeetListPageState extends State<MeetListPage>
         _isInviteCodePanelVisible = false;
         _inviteCodeController.clear();
         _selectedRoomId = '';
+        _isInviteSubmitting = false;
       });
     });
   }
@@ -201,6 +208,41 @@ class _MeetListPageState extends State<MeetListPage>
         });
       }
     });
+  }
+
+  String? _coalesceStrings(Map<String, dynamic>? source, List<String> keys) {
+    if (source == null) {
+      return null;
+    }
+    for (final key in keys) {
+      final value = source[key];
+      if (value is String && value.trim().isNotEmpty) {
+        return value.trim();
+      }
+    }
+    return null;
+  }
+
+  String _resolveJwtToken(Map<String, dynamic>? stored) {
+    final directToken = _coalesceStrings(
+      stored,
+      const ['jwtToken', 'jwt_token', 'accessToken', 'access_token'],
+    );
+    if (directToken != null && directToken.isNotEmpty) {
+      return directToken;
+    }
+
+    final tokens = stored?['tokens'];
+    if (tokens is Map<String, dynamic>) {
+      final nested = _coalesceStrings(
+        tokens.cast<String, dynamic>(),
+        const ['access_token', 'jwt_token'],
+      );
+      if (nested != null && nested.isNotEmpty) {
+        return nested;
+      }
+    }
+    return '';
   }
 
   void _showMeetingEndedMessage() {
@@ -248,41 +290,127 @@ class _MeetListPageState extends State<MeetListPage>
     });
   }
 
-  void _verifyInviteCode() async {
-    String code = _inviteCodeController.text.trim();
+  Future<void> _verifyInviteCode() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final code = _inviteCodeController.text.trim();
     if (code.isEmpty) {
-      // 显示错误提示
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('请输入邀请码')),
-      );
+      messenger.showSnackBar(const SnackBar(content: Text('??????')));
+      return;
+    }
+    if (_selectedRoomId.isEmpty) {
+      messenger.showSnackBar(const SnackBar(content: Text('??????????')));
       return;
     }
 
-    // 这里可以添加实际的验证逻辑
-    debugPrint('?????: ' +
-        code +
-        '???: ' +
-        _selectedMeetingTitle +
-        '???ID: ' +
-        _selectedRoomId);
+    setState(() {
+      _isInviteSubmitting = true;
+    });
 
-    // 验证成功后关闭面板
-    _hideInviteCodePanel();
+    try {
+      final loginState = await UserManager.getLoginState();
+      final bool isLoggedIn = loginState['isLoggedIn'] == true;
+      final Map<String, dynamic>? storedUserData =
+          loginState['userData'] as Map<String, dynamic>?;
 
-    // 跳转到直播间界面
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => VideoConferenceScreen(
-          roomName:
-              _selectedMeetingTitle.isNotEmpty ? _selectedMeetingTitle : '????',
-          roomId: _selectedRoomId.isNotEmpty
-              ? _selectedRoomId
-              : 'room_${DateTime.now().millisecondsSinceEpoch}',
+      GatewayRoomDetailResult detailResult;
+
+      if (isLoggedIn && storedUserData != null) {
+        final userName = _coalesceStrings(
+              storedUserData,
+              const ['userName', 'user_name', 'username'],
+            ) ??
+            (loginState['username'] as String? ?? '');
+        final jwtToken = _resolveJwtToken(storedUserData);
+        final wsUrl = _coalesceStrings(
+          storedUserData,
+          const ['wsUrl', 'ws_url'],
+        );
+
+        if (userName.isEmpty || jwtToken.isEmpty) {
+          throw Exception('????????????????');
+        }
+
+        detailResult = await _gatewayService.joinRoom(
+          roomId: _selectedRoomId,
           inviteCode: code,
+          userName: userName,
+          userJwtToken: jwtToken,
+          wssUrl: wsUrl,
+        );
+      } else {
+        final authStatus = await _gatewayService.getAuthStatus();
+        if (!authStatus.success) {
+          final message =
+              authStatus.error ?? authStatus.message ?? '??????????????';
+          throw Exception(message);
+        }
+
+        final guestName = authStatus.userName ??
+            authStatus.userNickname ??
+            'guest_${DateTime.now().millisecondsSinceEpoch}';
+        final guestToken = authStatus.jwtToken ?? '';
+        if (guestToken.isEmpty) {
+          throw Exception('????????????');
+        }
+
+        detailResult = await _gatewayService.joinRoom(
+          roomId: _selectedRoomId,
+          inviteCode: code,
+          userName: guestName,
+          userJwtToken: guestToken,
+          wssUrl: authStatus.wsUrl,
+        );
+      }
+
+      if (!detailResult.success || !detailResult.hasLiveKitToken) {
+        final message =
+            detailResult.error ?? detailResult.message ?? '???????????';
+        throw Exception(message);
+      }
+
+      final resolvedRoomId = detailResult.roomId ?? _selectedRoomId;
+      final resolvedRoomName = detailResult.roomName ??
+          (_selectedMeetingTitle.isNotEmpty
+              ? _selectedMeetingTitle
+              : resolvedRoomId);
+      final participantName = detailResult.userNickname ??
+          detailResult.userName ??
+          (loginState['username'] as String? ?? '??');
+
+      final joinData = RoomJoinData(
+        roomId: resolvedRoomId,
+        roomName: resolvedRoomName,
+        inviteCode: code,
+        participantName: participantName,
+        liveKitToken: detailResult.livekitToken ?? '',
+        wsUrl: detailResult.wssUrl ?? '',
+        roomInfo: detailResult.room,
+        userInfo: detailResult.user,
+        userRoles: detailResult.userRoles,
+        userId: detailResult.userId,
+      );
+
+      if (joinData.liveKitToken.isEmpty) {
+        throw Exception('????????????????');
+      }
+
+      _hideInviteCodePanel();
+      if (!mounted) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => VideoConferenceScreen(joinData: joinData),
         ),
-      ),
-    );
+      );
+    } catch (error) {
+      messenger.showSnackBar(SnackBar(content: Text(error.toString())));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isInviteSubmitting = false;
+        });
+      }
+    }
   }
 
   Future<void> _navigateToPersonalCenter(bool isRegister) async {
@@ -512,10 +640,10 @@ class _MeetListPageState extends State<MeetListPage>
                           children: [
                             SizedBox(width: 16),
                             if (_isLoggedIn) ...[
-                              // 已登录状态 - 显示用户信息
+                              // ????? - ??????
                               Expanded(
                                 child: Text(
-                                  '欢迎，$_currentUsername',
+                                  '???$_currentUsername',
                                   style: TextStyle(
                                     color: Colors.white,
                                     fontSize: 16,
@@ -524,7 +652,7 @@ class _MeetListPageState extends State<MeetListPage>
                                 ),
                               ),
                             ] else ...[
-                              // 未登录状态 - 显示登录注册按钮
+                              // ????? - ????????
                               ElevatedButton(
                                 onPressed: () {
                                   _toggleUserMenu();
@@ -702,7 +830,9 @@ class _MeetListPageState extends State<MeetListPage>
                                         width: double.infinity,
                                         height: 48,
                                         child: ElevatedButton(
-                                          onPressed: _verifyInviteCode,
+                                          onPressed: _isInviteSubmitting
+                                              ? null
+                                              : _verifyInviteCode,
                                           style: ElevatedButton.styleFrom(
                                             backgroundColor: Colors.blue,
                                             foregroundColor: Colors.white,
@@ -711,13 +841,27 @@ class _MeetListPageState extends State<MeetListPage>
                                                   BorderRadius.circular(8),
                                             ),
                                           ),
-                                          child: Text(
-                                            '点击验证',
-                                            style: TextStyle(
-                                              fontSize: 16,
-                                              fontWeight: FontWeight.w500,
-                                            ),
-                                          ),
+                                          child: _isInviteSubmitting
+                                              ? const SizedBox(
+                                                  width: 20,
+                                                  height: 20,
+                                                  child:
+                                                      CircularProgressIndicator(
+                                                    strokeWidth: 2,
+                                                    valueColor:
+                                                        AlwaysStoppedAnimation<
+                                                            Color>(
+                                                      Colors.white,
+                                                    ),
+                                                  ),
+                                                )
+                                              : const Text(
+                                                  '点击验证',
+                                                  style: TextStyle(
+                                                    fontSize: 16,
+                                                    fontWeight: FontWeight.w500,
+                                                  ),
+                                                ),
                                         ),
                                       ),
                                     ],

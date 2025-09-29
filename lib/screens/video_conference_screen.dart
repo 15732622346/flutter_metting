@@ -3,18 +3,16 @@ import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
 
+import '../models/room_join_data.dart';
+
 /// 直播间界面
 class VideoConferenceScreen extends StatefulWidget {
-  final String roomName;
-  final String roomId;
-  final String inviteCode;
-
   const VideoConferenceScreen({
     super.key,
-    required this.roomName,
-    required this.roomId,
-    required this.inviteCode,
+    required this.joinData,
   });
+
+  final RoomJoinData joinData;
 
   @override
   State<VideoConferenceScreen> createState() => _VideoConferenceScreenState();
@@ -35,31 +33,29 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
 
   // 小视频窗口状态
   bool _isSmallVideoMinimized = false;
-  
+
   // 浮动窗口拖动位置
   double _floatingWindowX = 0.0; // 距离右边的距离
   double _floatingWindowY = 305.0; // 距离顶部的距离
 
-
-
   // 麦位和聊天数据
   int _totalMicSeats = 10;
   int _occupiedMicSeats = 8;
-  String _moderator = 'wangba';
+  String _moderator = '主持人';
 
   // 模拟聊天消息
   List<ChatMessage> _chatMessages = [];
   bool _isInputFocused = false; // 输入框焦点状态
   bool _isSending = false; // 发送状态，防止按钮冲突
-  
+
   // 浮动窗口全屏按钮防抖
   bool _isFullscreenButtonClickable = true;
-
-
+  late RoomJoinData _session;
 
   @override
   void initState() {
     super.initState();
+    _session = widget.joinData;
     _initializeData();
     _initializeVideos();
 
@@ -95,14 +91,14 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
   /// 全屏按钮防抖函数
   void _debounceFullscreenButton(VoidCallback action) {
     if (!_isFullscreenButtonClickable) return;
-    
+
     setState(() {
       _isFullscreenButtonClickable = false;
     });
-    
+
     // 执行操作
     action();
-    
+
     // 2秒后重置点击状态（稍长一些，因为全屏操作比较重要）
     Future.delayed(Duration(seconds: 2), () {
       if (mounted) {
@@ -117,12 +113,14 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
   void _initializeVideos() {
     // 主视频 - 使用HTML7中的视频链接
     _videoController = VideoPlayerController.networkUrl(
-      Uri.parse('https://vod.pipi.cn/fec9203cvodtransbj1251246104/4332e3ed5145403693732329697/v.f42905.mp4'),
+      Uri.parse(
+          'https://vod.pipi.cn/fec9203cvodtransbj1251246104/4332e3ed5145403693732329697/v.f42905.mp4'),
     );
 
     // 小视频 - 使用HTML7中的小视频链接
     _smallVideoController = VideoPlayerController.networkUrl(
-      Uri.parse('https://vod.pipi.cn/fec9203cvodtransbj1251246104/e032d17c5145403694330550266/v.f42905.mp4'),
+      Uri.parse(
+          'https://vod.pipi.cn/fec9203cvodtransbj1251246104/e032d17c5145403694330550266/v.f42905.mp4'),
     );
 
     // 初始化主视频
@@ -176,21 +174,43 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
     });
   }
 
-
-
-  /// 初始化模拟数据 - 完全匹配HTML的消息
+  /// 初始化模拟数据 - 结合实时房间信息
   void _initializeData() {
+    final roomInfo = _session.roomInfo ?? <String, dynamic>{};
+    final hostName = roomInfo['host_nickname'] ??
+        roomInfo['hostNickname'] ??
+        roomInfo['creator_nickname'] ??
+        roomInfo['creatorName'] ??
+        _moderator;
+
+    if (hostName is String && hostName.trim().isNotEmpty) {
+      _moderator = hostName.trim();
+    }
+
+    final maxSlots = roomInfo['max_mic_slots'] ?? roomInfo['maxMicSlots'];
+    if (maxSlots is int && maxSlots > 0) {
+      _totalMicSeats = maxSlots;
+    }
+
+    final onlineCount = roomInfo['online_count'] ?? roomInfo['onlineCount'];
+    if (onlineCount is int && onlineCount >= 0) {
+      _occupiedMicSeats = onlineCount;
+    }
+
+    final participantName =
+        _session.participantName.isNotEmpty ? _session.participantName : '访客';
+
     _chatMessages = [
-      ChatMessage(username: '系统', message: '系统：视频直播已开始', isSystem: true),
-      ChatMessage(username: '系统', message: '系统：当前播放《大雄兔》测试视频', isSystem: true),
-      ChatMessage(username: '系统', message: '系统：右下角按钮可以全屏小视频', isSystem: true),
-      ChatMessage(username: '系统', message: '系统：右上角按钮可以缩小窗口', isSystem: true),
-      ChatMessage(username: '主持人', message: '主持人：欢迎大家来到直播间！', isSystem: false),
-      ChatMessage(username: '用户小明', message: '用户小明：视频播放很流畅！', isSystem: false),
-      ChatMessage(username: '用户小红', message: '用户小红：画质很清晰', isSystem: false),
-      ChatMessage(username: '用户小李', message: '用户小李：界面非常简洁流畅', isSystem: false),
-      ChatMessage(username: '用户小王', message: '用户小王：小视频功能很棒', isSystem: false),
-      ChatMessage(username: '系统', message: '系统：视频播放功能正常', isSystem: true),
+      ChatMessage(
+        username: '系统',
+        message: '系统：欢迎 ${participantName} 加入 ${_session.roomName}',
+        isSystem: true,
+      ),
+      ChatMessage(
+        username: '系统',
+        message: '系统：主持人 $_moderator 正在等待大家入场',
+        isSystem: true,
+      ),
     ];
   }
 
@@ -213,22 +233,20 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
                   child: _buildVideoArea(),
                 ),
 
-              // 聊天区域 - 填充剩余空间
-              Expanded(
-                child: _buildChatSection(),
-              ),
-            ],
-          ),
-          
-          // 小视频窗口 - 浮动在右上角
-          _buildSmallVideoWindow(),
+                // 聊天区域 - 填充剩余空间
+                Expanded(
+                  child: _buildChatSection(),
+                ),
+              ],
+            ),
+
+            // 小视频窗口 - 浮动在右上角
+            _buildSmallVideoWindow(),
           ],
         ),
       ),
     );
   }
-
-
 
   /// 构建视频播放区域
   Widget _buildVideoArea() {
@@ -251,8 +269,6 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
             ),
     );
   }
-
-
 
   /// 构建小视频窗口
   Widget _buildSmallVideoWindow() {
@@ -313,119 +329,118 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
           });
         },
         child: Container(
-        width: 120,
-        height: 140,
-        decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.85),
-          border: Border.all(color: Colors.white.withOpacity(0.3), width: 5),
-          borderRadius: BorderRadius.circular(8),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.3),
-              blurRadius: 20,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Stack(
-          children: [
-            // 小视频内容
-            ClipRRect(
-              borderRadius: BorderRadius.circular(3),
-              child: _isSmallVideoInitialized && _smallChewieController != null
-                  ? Chewie(controller: _smallChewieController!)
-                  : Container(
-                      width: double.infinity,
-                      height: double.infinity,
-                      color: Colors.black,
-                      child: const Center(
-                        child: SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2,
+          width: 120,
+          height: 140,
+          decoration: BoxDecoration(
+            color: Colors.black.withOpacity(0.85),
+            border: Border.all(color: Colors.white.withOpacity(0.3), width: 5),
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.3),
+                blurRadius: 20,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Stack(
+            children: [
+              // 小视频内容
+              ClipRRect(
+                borderRadius: BorderRadius.circular(3),
+                child:
+                    _isSmallVideoInitialized && _smallChewieController != null
+                        ? Chewie(controller: _smallChewieController!)
+                        : Container(
+                            width: double.infinity,
+                            height: double.infinity,
+                            color: Colors.black,
+                            child: const Center(
+                              child: SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                            ),
                           ),
+              ),
+              // 控制按钮
+              Positioned(
+                top: 5,
+                right: 5,
+                child: GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _isSmallVideoMinimized = true;
+                    });
+                  },
+                  child: Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.9),
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.3),
+                          blurRadius: 3,
+                          offset: const Offset(0, 1),
+                        ),
+                      ],
+                    ),
+                    child: const Center(
+                      child: Text(
+                        '—',
+                        style: TextStyle(
+                          color: Colors.black,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
                     ),
-            ),
-            // 控制按钮
-            Positioned(
-              top: 5,
-              right: 5,
-              child: GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _isSmallVideoMinimized = true;
-                  });
-                },
-                child: Container(
-                  width: 28,
-                  height: 28,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.9),
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.3),
-                        blurRadius: 3,
-                        offset: const Offset(0, 1),
-                      ),
-                    ],
                   ),
-                  child: const Center(
-                    child: Text(
-                      '—',
-                      style: TextStyle(
+                ),
+              ),
+              Positioned(
+                bottom: 5,
+                right: 5,
+                child: GestureDetector(
+                  onTap: () => _debounceFullscreenButton(() {
+                    _showToast('小视频全屏功能由chewie提供');
+                  }),
+                  child: Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.9),
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.3),
+                          blurRadius: 3,
+                          offset: const Offset(0, 1),
+                        ),
+                      ],
+                    ),
+                    child: const Center(
+                      child: Icon(
+                        Icons.fullscreen,
                         color: Colors.black,
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
+                        size: 16,
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
-            Positioned(
-              bottom: 5,
-              right: 5,
-              child: GestureDetector(
-                onTap: () => _debounceFullscreenButton(() {
-                  _showToast('小视频全屏功能由chewie提供');
-                }),
-                child: Container(
-                  width: 28,
-                  height: 28,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.9),
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.3),
-                        blurRadius: 3,
-                        offset: const Offset(0, 1),
-                      ),
-                    ],
-                  ),
-                  child: const Center(
-                    child: Icon(
-                      Icons.fullscreen,
-                      color: Colors.black,
-                      size: 16,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
+            ],
+          ),
         ),
       ),
     );
   }
-
-
 
   /// 构建聊天区域
   Widget _buildChatSection() {
@@ -433,7 +448,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
       children: [
         // 聊天标题栏 - 完全匹配HTML样式
         _buildChatHeader(),
-        
+
         // 聊天容器
         Expanded(
           child: _buildChatContainer(),
@@ -441,7 +456,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
       ],
     );
   }
-  
+
   /// 构建聊天标题栏
   Widget _buildChatHeader() {
     return Container(
@@ -551,7 +566,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
             ),
           ),
         ),
-        
+
         // 底部输入区域
         _buildInputContainer(),
       ],
@@ -564,11 +579,11 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(15), // 匹配HTML的12px 15px
       decoration: BoxDecoration(
-        color: message.isSystem 
-          ? const Color(0xFFe8f5e9) // 系统消息浅绿色背景
-          : message.isOwn
-            ? const Color(0xFFe3f2fd) // 用户消息浅蓝色背景  
-            : Colors.white, // 其他消息白色背景
+        color: message.isSystem
+            ? const Color(0xFFe8f5e9) // 系统消息浅绿色背景
+            : message.isOwn
+                ? const Color(0xFFe3f2fd) // 用户消息浅蓝色背景
+                : Colors.white, // 其他消息白色背景
         borderRadius: BorderRadius.circular(8), // 8px圆角
         boxShadow: [
           BoxShadow(
@@ -579,13 +594,13 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
         ],
       ),
       child: Text(
-        message.isSystem 
-          ? message.message // 系统消息直接显示
-          : '${message.username}: ${message.message}', // 用户消息带用户名
+        message.isSystem
+            ? message.message // 系统消息直接显示
+            : '${message.username}: ${message.message}', // 用户消息带用户名
         style: TextStyle(
-          color: message.isSystem 
-            ? const Color(0xFF2e7d32) // 系统消息深绿色文字
-            : Colors.black87, // 其他消息黑色文字
+          color: message.isSystem
+              ? const Color(0xFF2e7d32) // 系统消息深绿色文字
+              : Colors.black87, // 其他消息黑色文字
           fontSize: 14,
         ),
       ),
@@ -624,10 +639,12 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
                   ),
                   filled: true,
                   fillColor: Colors.white,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 15, vertical: 8), // 调整内边距
+                  contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 15, vertical: 8), // 调整内边距
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(4), // 4px圆角
-                    borderSide: const BorderSide(color: Color(0xFFdddddd)), // #ddd
+                    borderSide:
+                        const BorderSide(color: Color(0xFFdddddd)), // #ddd
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(4),
@@ -645,7 +662,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
               ),
             ),
           ),
-          
+
           const SizedBox(width: 10), // 匹配HTML的gap: 10px
 
           // 按钮工具栏
@@ -791,6 +808,3 @@ class ChatMessage {
     this.isOwn = false,
   }) : timestamp = DateTime.now();
 }
-
-
-

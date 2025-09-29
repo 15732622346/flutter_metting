@@ -90,7 +90,6 @@ class GatewayApiService {
     return GatewayRegisterResult.fromResponse(response);
   }
 
-
   Future<bool> logout({String? jwtToken}) async {
     final response = await _callGateway(
       endpoint: '/api/v1/auth/logout',
@@ -101,6 +100,7 @@ class GatewayApiService {
     );
     return response['success'] == true;
   }
+
   Future<Map<String, dynamic>> fetchRoomList({int page = 1}) async {
     return _callGateway(
       endpoint: '/api/v1/rooms/list',
@@ -108,6 +108,61 @@ class GatewayApiService {
       query: {
         'page': page,
       },
+    );
+  }
+
+  Future<GatewayAuthStatusResult> getAuthStatus({String? jwtToken}) async {
+    final response = await _callGateway(
+      endpoint: '/api/v1/auth/status',
+      method: 'GET',
+      headers: jwtToken != null && jwtToken.isNotEmpty
+          ? {'Authorization': 'Bearer ' + jwtToken}
+          : null,
+    );
+
+    return GatewayAuthStatusResult.fromResponse(response);
+  }
+
+  Future<GatewayRoomDetailResult> fetchRoomDetail({
+    required String roomId,
+    required String inviteCode,
+    required String userName,
+    required String userJwtToken,
+    String? wssUrl,
+  }) async {
+    final query = <String, dynamic>{
+      'room_id': roomId,
+      'invite_code': inviteCode,
+      'user_name': userName,
+      'user_jwt_token': userJwtToken,
+      if (wssUrl != null && wssUrl.isNotEmpty) 'wss_url': wssUrl,
+    };
+
+    final response = await _callGateway(
+      endpoint: '/api/v1/rooms/detail',
+      method: 'GET',
+      query: query,
+      headers: userJwtToken.isNotEmpty
+          ? {'Authorization': 'Bearer ' + userJwtToken}
+          : null,
+    );
+
+    return GatewayRoomDetailResult.fromResponse(response);
+  }
+
+  Future<GatewayRoomDetailResult> joinRoom({
+    required String roomId,
+    required String inviteCode,
+    required String userName,
+    required String userJwtToken,
+    String? wssUrl,
+  }) async {
+    return fetchRoomDetail(
+      roomId: roomId,
+      inviteCode: inviteCode,
+      userName: userName,
+      userJwtToken: userJwtToken,
+      wssUrl: wssUrl,
     );
   }
 
@@ -258,7 +313,8 @@ class GatewayAuthResult {
   factory GatewayAuthResult.fromResponse(Map<String, dynamic> response) {
     final normalized = _normalizeResponse(response);
     final payload = normalized.payload;
-    final tokens = _extractMap(payload, 'tokens') ?? _extractMap(normalized.envelope, 'tokens');
+    final tokens = _extractMap(payload, 'tokens') ??
+        _extractMap(normalized.envelope, 'tokens');
 
     final jwtToken = _pickString(payload, const ['jwt_token']) ??
         _pickString(tokens, const ['access_token']) ??
@@ -270,7 +326,8 @@ class GatewayAuthResult {
     final userId = _pickInt(payload, const ['uid', 'user_id', 'id']);
     final userRoles = _pickInt(payload, const ['user_roles']);
     final userName = _pickString(payload, const ['user_name', 'username']);
-    final userNickname = _pickString(payload, const ['user_nickname', 'nickname']) ?? userName;
+    final userNickname =
+        _pickString(payload, const ['user_nickname', 'nickname']) ?? userName;
     final wsUrl = _pickString(payload, const ['ws_url']) ??
         _pickString(normalized.envelope, const ['ws_url']);
 
@@ -338,6 +395,106 @@ class GatewayRegisterResult {
   }
 }
 
+class GatewayAuthStatusResult {
+  GatewayAuthStatusResult({
+    required this.success,
+    this.message,
+    this.error,
+    this.payload,
+    this.userType,
+    this.userName,
+    this.userNickname,
+    this.jwtToken,
+    this.wsUrl,
+  });
+
+  final bool success;
+  final String? message;
+  final String? error;
+  final Map<String, dynamic>? payload;
+  final String? userType;
+  final String? userName;
+  final String? userNickname;
+  final String? jwtToken;
+  final String? wsUrl;
+
+  bool get isGuest => userType == 'guest';
+
+  factory GatewayAuthStatusResult.fromResponse(Map<String, dynamic> response) {
+    final normalized = _normalizeResponse(response);
+    final payload = normalized.payload;
+
+    final userInfo = _extractMap(payload, 'user') ?? payload;
+
+    return GatewayAuthStatusResult(
+      success: normalized.success,
+      message: normalized.message,
+      error: normalized.error,
+      payload: payload,
+      userType: _pickString(payload, const ['user_type', 'type']),
+      userName: _pickString(payload, const ['user_name', 'username']) ??
+          _pickString(userInfo, const ['user_name', 'username']),
+      userNickname: _pickString(payload, const ['user_nickname', 'nickname']) ??
+          _pickString(userInfo, const ['user_nickname', 'nickname']),
+      jwtToken: _pickString(payload, const ['jwt_token']) ??
+          _pickString(userInfo, const ['jwt_token']),
+      wsUrl: _pickString(payload, const ['ws_url', 'wss_url']) ??
+          _pickString(userInfo, const ['ws_url', 'wss_url']),
+    );
+  }
+}
+
+class GatewayRoomDetailResult {
+  GatewayRoomDetailResult({
+    required this.success,
+    this.message,
+    this.error,
+    this.payload,
+    this.user,
+    this.room,
+    this.connection,
+  });
+
+  final bool success;
+  final String? message;
+  final String? error;
+  final Map<String, dynamic>? payload;
+  final Map<String, dynamic>? user;
+  final Map<String, dynamic>? room;
+  final Map<String, dynamic>? connection;
+
+  String? get livekitToken =>
+      _pickString(connection, const ['livekit_token', 'token']);
+  String? get wssUrl => _pickString(connection, const ['wss_url', 'ws_url']);
+  String? get userName => _pickString(user, const ['user_name', 'username']);
+  String? get userNickname =>
+      _pickString(user, const ['user_nickname', 'nickname']);
+  int? get userRoles => _pickInt(user, const ['user_roles']);
+  int? get userId => _pickInt(user, const ['uid', 'user_id', 'id']);
+  String? get roomId => _pickString(room, const ['room_id', 'id']);
+  String? get roomName => _pickString(room, const ['room_name', 'name']);
+  bool get hasLiveKitToken => (livekitToken?.isNotEmpty ?? false);
+
+  factory GatewayRoomDetailResult.fromResponse(Map<String, dynamic> response) {
+    final normalized = _normalizeResponse(response);
+    final payload = normalized.payload ?? response;
+
+    final user = _extractMap(payload, 'user');
+    final room = _extractMap(payload, 'room');
+    final connection = _extractMap(payload, 'connection');
+
+    return GatewayRoomDetailResult(
+      success: normalized.success,
+      message: normalized.message,
+      error: normalized.error,
+      payload: payload,
+      user: user,
+      room: room,
+      connection: connection,
+    );
+  }
+}
+
 class _NormalizedResponse {
   const _NormalizedResponse({
     required this.envelope,
@@ -379,7 +536,10 @@ _NormalizedResponse _normalizeResponse(Map<String, dynamic> raw) {
   final success = (payload['success'] ?? envelope['success']) == true;
   final message = _pickString(payload, const ['message', 'error']) ??
       _pickString(envelope, const ['message', 'error']);
-  final error = success ? null : (_pickString(payload, const ['error']) ?? _pickString(envelope, const ['error']));
+  final error = success
+      ? null
+      : (_pickString(payload, const ['error']) ??
+          _pickString(envelope, const ['error']));
 
   return _NormalizedResponse(
     envelope: envelope,
@@ -527,4 +687,3 @@ int? _parseSeconds(dynamic value) {
   }
   return null;
 }
-
