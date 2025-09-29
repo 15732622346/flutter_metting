@@ -27,19 +27,42 @@ class _SimpleProfileScreenState extends State<SimpleProfileScreen> {
   bool _isButtonClickable = true;
   // 提示显示状态标志
   bool _isToastVisible = false;
-  
+  String? _nickname;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserProfile();
+  }
+
+  Future<void> _loadUserProfile() async {
+    final storedData = await UserManager.getStoredUserData();
+    if (!mounted) {
+      return;
+    }
+
+    final dynamic nicknameValue = storedData?['userNickname'] ??
+        storedData?['user_nickname'] ??
+        storedData?['nickname'];
+    final nickname = nicknameValue is String ? nicknameValue.trim() : null;
+
+    setState(() {
+      _nickname = nickname?.isEmpty == true ? null : nickname;
+    });
+  }
+
   /// 防抖函数 - 防止用户快速重复点击和重复显示提示
   void _debounceButtonClick(VoidCallback action) {
     if (!_isButtonClickable || _isToastVisible) return;
-    
+
     setState(() {
       _isButtonClickable = false;
       _isToastVisible = true;
     });
-    
+
     // 执行操作
     action();
-    
+
     // 1秒后重置点击状态
     Future.delayed(Duration(seconds: 1), () {
       if (mounted) {
@@ -48,7 +71,7 @@ class _SimpleProfileScreenState extends State<SimpleProfileScreen> {
         });
       }
     });
-    
+
     // 2秒后重置提示状态（与SnackBar显示时间同步）
     Future.delayed(Duration(seconds: 2), () {
       if (mounted) {
@@ -88,7 +111,9 @@ class _SimpleProfileScreenState extends State<SimpleProfileScreen> {
     if (shouldLogout == true) {
       try {
         final storedData = await UserManager.getStoredUserData();
-        final jwtToken = (storedData?['jwtToken'] ?? storedData?['jwt_token'] ?? storedData?['accessToken']) as String?;
+        final jwtToken = (storedData?['jwtToken'] ??
+            storedData?['jwt_token'] ??
+            storedData?['accessToken']) as String?;
         await _gatewayService.logout(jwtToken: jwtToken);
       } catch (error) {
         // 忽略退出过程中的网络异常
@@ -116,6 +141,8 @@ class _SimpleProfileScreenState extends State<SimpleProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final displayNickname =
+        (_nickname?.isNotEmpty ?? false) ? _nickname! : widget.username;
     return Scaffold(
       backgroundColor: Color(0xFFF5F5F5), // 浅灰色背景
       appBar: AppBar(
@@ -174,7 +201,7 @@ class _SimpleProfileScreenState extends State<SimpleProfileScreen> {
 
                   // 灰色用户名重复显示（如图片中的样式）
                   Text(
-                    widget.username,
+                    displayNickname,
                     style: TextStyle(
                       fontSize: 14,
                       color: Colors.grey[600],
@@ -185,7 +212,7 @@ class _SimpleProfileScreenState extends State<SimpleProfileScreen> {
             ),
 
             SizedBox(height: 15), // 减少到菜单间距：20→15
-            
+
             // 功能菜单 - 白色背景，简洁设计
             Container(
               decoration: BoxDecoration(
@@ -206,7 +233,6 @@ class _SimpleProfileScreenState extends State<SimpleProfileScreen> {
                     },
                   ),
                   _buildDivider(),
-                  
                   _buildMenuItem(
                     context,
                     icon: Icons.lock,
@@ -220,7 +246,6 @@ class _SimpleProfileScreenState extends State<SimpleProfileScreen> {
                     },
                   ),
                   _buildDivider(),
-                  
                   _buildMenuItem(
                     context,
                     icon: Icons.system_update,
@@ -240,7 +265,6 @@ class _SimpleProfileScreenState extends State<SimpleProfileScreen> {
                     },
                   ),
                   _buildDivider(),
-                  
                   _buildMenuItem(
                     context,
                     icon: Icons.help,
@@ -256,9 +280,9 @@ class _SimpleProfileScreenState extends State<SimpleProfileScreen> {
                 ],
               ),
             ),
-            
+
             SizedBox(height: 40),
-            
+
             // 退出登录按钮 - 绿色背景
             Padding(
               padding: EdgeInsets.symmetric(horizontal: 20),
@@ -284,7 +308,7 @@ class _SimpleProfileScreenState extends State<SimpleProfileScreen> {
                 ),
               ),
             ),
-            
+
             SizedBox(height: 40),
           ],
         ),

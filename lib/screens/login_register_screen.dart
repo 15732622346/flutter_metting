@@ -101,19 +101,37 @@ class _LoginRegisterPageState extends State<LoginRegisterPage> {
           return;
         }
 
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text(registerResult.message ?? '注册成功，请使用账号密码登录'),
-          ),
+        final autoLoginResult = await _gatewayService.login(
+          username: username,
+          password: password,
         );
 
-        setState(() {
-          _isRegisterMode = false;
-          _accountController.text = username;
-          _nicknameController.clear();
-          _passwordController.clear();
-          _confirmPasswordController.clear();
-        });
+        if (!autoLoginResult.success || !autoLoginResult.hasJwtToken) {
+          messenger.showSnackBar(
+            SnackBar(
+              content: Text(
+                autoLoginResult.error ??
+                    autoLoginResult.message ??
+                    '注册成功，但自动登录失败，请手动登录',
+              ),
+            ),
+          );
+          setState(() {
+            _isRegisterMode = false;
+            _accountController.text = username;
+            _nicknameController.clear();
+            _passwordController.clear();
+            _confirmPasswordController.clear();
+          });
+          return;
+        }
+
+        await _completeLoginFlow(
+          loginResult: autoLoginResult,
+          fallbackUsername: username,
+          messenger: messenger,
+          successMessage: registerResult.message ?? '注册成功',
+        );
         return;
       }
 
@@ -132,27 +150,11 @@ class _LoginRegisterPageState extends State<LoginRegisterPage> {
         return;
       }
 
-      final resolvedUsername =
-          (loginResult.userName?.trim().isNotEmpty ?? false)
-              ? loginResult.userName!.trim()
-              : username;
-
-      await UserManager.saveLoginState(
-        username: resolvedUsername,
-        extraData: loginResult.toStorageJson(),
+      await _completeLoginFlow(
+        loginResult: loginResult,
+        fallbackUsername: username,
+        messenger: messenger,
       );
-
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(loginResult.message ?? '登录成功'),
-        ),
-      );
-
-      widget.onLoginSuccess?.call(resolvedUsername);
-
-      if (mounted) {
-        Navigator.pop(context);
-      }
     } catch (error) {
       messenger.showSnackBar(
         SnackBar(
@@ -165,6 +167,37 @@ class _LoginRegisterPageState extends State<LoginRegisterPage> {
           _isLoading = false;
         });
       }
+    }
+  }
+
+  Future<void> _completeLoginFlow({
+    required GatewayAuthResult loginResult,
+    required String fallbackUsername,
+    required ScaffoldMessengerState messenger,
+    bool showSuccessMessage = true,
+    String? successMessage,
+  }) async {
+    final resolvedUsername = (loginResult.userName?.trim().isNotEmpty ?? false)
+        ? loginResult.userName!.trim()
+        : fallbackUsername;
+
+    await UserManager.saveLoginState(
+      username: resolvedUsername,
+      extraData: loginResult.toStorageJson(),
+    );
+
+    if (showSuccessMessage) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(successMessage ?? loginResult.message ?? '登录成功'),
+        ),
+      );
+    }
+
+    widget.onLoginSuccess?.call(resolvedUsername);
+
+    if (mounted) {
+      Navigator.pop(context);
     }
   }
 
