@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -22,6 +23,159 @@ class AuthProvider extends ChangeNotifier {
   bool _isLoggedIn = false;
   bool _isLoading = false;
   String? _lastError;
+  Timer? _refreshTimer;
+  Future<GatewayAuthResult?>? _refreshInFlight;
+
+  static const Duration _refreshSafetyWindow = Duration(minutes: 5);
+
+  String? _effectiveToken(GatewayAuthResult? auth) {
+    if (auth == null) {
+      return null;
+    }
+    if (auth.jwtToken != null && auth.jwtToken!.isNotEmpty) {
+      return auth.jwtToken;
+    }
+    if (auth.accessToken != null && auth.accessToken!.isNotEmpty) {
+      return auth.accessToken;
+    }
+    return null;
+  }
+
+  GatewayAuthResult _mergeAuthResults(GatewayAuthResult current, GatewayAuthResult next) {
+    return GatewayAuthResult(
+      success: current.success && next.success,
+      message: next.message ?? current.message,
+      error: next.error ?? current.error,
+      payload: next.payload ?? current.payload,
+      tokens: next.tokens ?? current.tokens,
+      jwtToken: (next.jwtToken != null && next.jwtToken!.isNotEmpty) ? next.jwtToken : current.jwtToken,
+      accessToken: (next.accessToken != null && next.accessToken!.isNotEmpty) ? next.accessToken : current.accessToken,
+      refreshToken: (next.refreshToken != null && next.refreshToken!.isNotEmpty) ? next.refreshToken : current.refreshToken,
+      accessExpiresAt: next.accessExpiresAt ?? current.accessExpiresAt,
+      refreshExpiresAt: next.refreshExpiresAt ?? current.refreshExpiresAt,
+      userId: next.userId ?? current.userId,
+      userName: next.userName ?? current.userName,
+      userNickname: next.userNickname ?? current.userNickname,
+      userRoles: next.userRoles ?? current.userRoles,
+      wsUrl: next.wsUrl ?? current.wsUrl,
+    );
+  }
+
+
+  GatewayAuthResult? _restoreAuthResult(Map<String, dynamic>? stored) {
+    if (stored == null || stored.isEmpty) {
+      return null;
+    }
+
+    Map<String, dynamic>? parseMap(dynamic value) {
+      if (value is Map<String, dynamic>) {
+        return value;
+      }
+      if (value is Map) {
+        return value.map((key, val) => MapEntry(key.toString(), val));
+      }
+      if (value is String) {
+        final trimmed = value.trim();
+        if (trimmed.isEmpty) {
+          return null;
+        }
+        try {
+          final decoded = jsonDecode(trimmed);
+          if (decoded is Map<String, dynamic>) {
+            return decoded;
+          }
+          if (decoded is Map) {
+            return decoded.map((key, val) => MapEntry(key.toString(), val));
+          }
+        } catch (_) {
+          return null;
+        }
+      }
+      return null;
+    }
+
+    String? parseString(dynamic value) {
+      if (value is String) {
+        final trimmed = value.trim();
+        return trimmed.isEmpty ? null : trimmed;
+      }
+      if (value is num) {
+        return value.toString();
+      }
+      return null;
+    }
+
+    int? parseInt(dynamic value) {
+      if (value is int) {
+        return value;
+      }
+      if (value is double) {
+        return value.round();
+      }
+      if (value is num) {
+        return value.toInt();
+      }
+      if (value is String) {
+        final trimmed = value.trim();
+        if (trimmed.isEmpty) {
+          return null;
+        }
+        final parsed = int.tryParse(trimmed);
+        if (parsed != null) {
+          return parsed;
+        }
+        final asDouble = double.tryParse(trimmed);
+        if (asDouble != null) {
+          return asDouble.round();
+        }
+      }
+      return null;
+    }
+
+    DateTime? parseDate(dynamic value) {
+      if (value is String && value.trim().isNotEmpty) {
+        final parsed = DateTime.tryParse(value.trim());
+        if (parsed != null) {
+          return parsed;
+        }
+      }
+      if (value is int) {
+        if (value > 1000000000000) {
+          return DateTime.fromMillisecondsSinceEpoch(value);
+        }
+        if (value > 0) {
+          return DateTime.fromMillisecondsSinceEpoch(value * 1000);
+        }
+      }
+      if (value is double) {
+        if (value > 1000000000000) {
+          return DateTime.fromMillisecondsSinceEpoch(value.round());
+        }
+        if (value > 0) {
+          return DateTime.fromMillisecondsSinceEpoch((value * 1000).round());
+        }
+      }
+      return null;
+    }
+
+    return GatewayAuthResult(
+      success: stored['success'] != false,
+      message: parseString(stored['message']),
+      error: parseString(stored['error']),
+      payload: parseMap(stored['payload']),
+      tokens: parseMap(stored['tokens']),
+      jwtToken: parseString(stored['jwtToken']) ?? parseString(stored['jwt_token']),
+      accessToken: parseString(stored['accessToken']) ?? parseString(stored['access_token']),
+      refreshToken: parseString(stored['refreshToken']) ?? parseString(stored['refresh_token']),
+      accessExpiresAt: parseDate(stored['accessExpiresAt']) ?? parseDate(stored['access_expires_at']),
+      refreshExpiresAt: parseDate(stored['refreshExpiresAt']) ?? parseDate(stored['refresh_expires_at']),
+      userId: parseInt(stored['userId']) ?? parseInt(stored['user_id']),
+      userName: parseString(stored['userName']) ?? parseString(stored['user_name']),
+      userNickname: parseString(stored['userNickname']) ?? parseString(stored['user_nickname']),
+      userRoles: parseInt(stored['userRoles']) ?? parseInt(stored['user_roles']),
+      wsUrl: parseString(stored['wsUrl']) ?? parseString(stored['ws_url']),
+    );
+  }
 
   User? get currentUser => _currentUser;
   bool get isLoggedIn => _isLoggedIn;
@@ -42,13 +196,13 @@ class AuthProvider extends ChangeNotifier {
 
       GatewayAuthResult? restoredAuth;
       if (storedUserData != null && storedUserData.isNotEmpty) {
-        restoredAuth = GatewayAuthResult.fromStorageJson(storedUserData);
+        restoredAuth = _restoreAuthResult(storedUserData);
       } else {
         final rawAuth = await _secureStorage.read(key: _secureAuthKey);
         if (rawAuth != null && rawAuth.isNotEmpty) {
           final decoded = jsonDecode(rawAuth);
           if (decoded is Map<String, dynamic>) {
-            restoredAuth = GatewayAuthResult.fromStorageJson(decoded);
+            restoredAuth = _restoreAuthResult(decoded);
           }
         }
       }
@@ -65,6 +219,7 @@ class AuthProvider extends ChangeNotifier {
         _currentUser = _buildUserFromAuth(resolvedUserName, restoredAuth);
         _isLoggedIn = true;
         print('Restored login state: $resolvedUserName');
+        _scheduleTokenRefresh();
         return;
       }
 
@@ -155,6 +310,7 @@ class AuthProvider extends ChangeNotifier {
 
       await _persistAuthSession(resolvedUserName, loginResult);
       await _saveCredentials(username, password);
+      _scheduleTokenRefresh();
 
       final response = LoginResponse(
         success: true,
@@ -223,6 +379,22 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  Future<String?> ensureValidGatewayToken({bool forceRefresh = false}) async {
+    final auth = _authResult;
+    if (auth == null) {
+      return null;
+    }
+
+    if (!forceRefresh) {
+      final expiresAt = _resolveAccessExpiry(auth);
+      if (expiresAt != null && expiresAt.isAfter(DateTime.now().add(_refreshSafetyWindow))) {
+        return _effectiveToken(auth);
+      }
+    }
+
+    return _refreshGatewayToken(force: forceRefresh);
+  }
+
   Future<void> logout() async {
     try {
       _setLoading(true);
@@ -253,6 +425,8 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> clearUserData() async {
+    _cancelScheduledRefresh();
+    _refreshInFlight = null;
     try {
       await _secureStorage.delete(key: _secureUserKey);
       await _secureStorage.delete(key: _secureAuthKey);
@@ -295,6 +469,153 @@ class AuthProvider extends ChangeNotifier {
     } catch (error) {
       print('Failed to update remember flag: $error');
     }
+  }
+
+  Future<String?> _refreshGatewayToken({bool force = false}) async {
+    final auth = _authResult;
+    if (auth == null) {
+      return null;
+    }
+
+    final refreshToken = auth.refreshToken;
+    if (refreshToken == null || refreshToken.isEmpty) {
+      return _effectiveToken(auth);
+    }
+
+    final refreshExpiry = auth.refreshExpiresAt;
+    if (refreshExpiry != null && refreshExpiry.isBefore(DateTime.now())) {
+      await _handleSessionExpired('Refresh token expired');
+      return null;
+    }
+
+    if (_refreshInFlight != null) {
+      await _refreshInFlight;
+      return _effectiveToken(_authResult);
+    }
+
+    final completer = Completer<GatewayAuthResult?>();
+    _refreshInFlight = completer.future;
+
+    try {
+      final result = await _gatewayService.refreshAuthToken(
+        refreshToken: refreshToken,
+        jwtToken: _effectiveToken(auth),
+      );
+
+      if (!result.success || !result.hasJwtToken) {
+        final message = result.error ?? result.message ?? 'Token refresh failed';
+        await _handleSessionExpired(message);
+        throw Exception(message);
+      }
+
+      final merged = _mergeAuthResults(auth, result);
+      _authResult = merged;
+
+      if (_currentUser != null) {
+        _currentUser = _currentUser!.copyWith(
+          userName: merged.userName ?? _currentUser!.userName,
+          userNickname: merged.userNickname ?? _currentUser!.userNickname,
+          lastLoginTime: merged.accessExpiresAt ?? _currentUser!.lastLoginTime,
+        );
+      }
+
+      final usernameForStorage = merged.userName ?? _currentUser?.userName ?? 'user';
+      await _persistAuthSession(usernameForStorage, merged);
+      _scheduleTokenRefresh();
+      notifyListeners();
+      completer.complete(merged);
+      return _effectiveToken(merged);
+    } catch (error) {
+      completer.completeError(error);
+      if (force) {
+        print('Token refresh failed: ' + error.toString());
+      }
+      rethrow;
+    } finally {
+      _refreshInFlight = null;
+    }
+  }
+
+  void _scheduleTokenRefresh() {
+    _cancelScheduledRefresh();
+
+    final auth = _authResult;
+    if (auth == null) {
+      return;
+    }
+
+    final refreshToken = auth.refreshToken;
+    if (refreshToken == null || refreshToken.isEmpty) {
+      return;
+    }
+
+    final expiresAt = _resolveAccessExpiry(auth);
+    if (expiresAt == null) {
+      return;
+    }
+
+    final triggerAt = expiresAt.subtract(_refreshSafetyWindow);
+    final now = DateTime.now();
+    var delay = triggerAt.difference(now);
+    if (delay.isNegative || delay.inSeconds <= 0) {
+      delay = const Duration(seconds: 5);
+    }
+
+    _refreshTimer = Timer(delay, () {
+      _refreshGatewayToken(force: true).catchError((error) {
+        print('Automatic token refresh failed: $error');
+      });
+    });
+  }
+
+  void _cancelScheduledRefresh() {
+    _refreshTimer?.cancel();
+    _refreshTimer = null;
+  }
+
+  DateTime? _resolveAccessExpiry(GatewayAuthResult auth) {
+    if (auth.accessExpiresAt != null) {
+      return auth.accessExpiresAt;
+    }
+    final token = _effectiveToken(auth);
+    if (token == null || token.isEmpty) {
+      return null;
+    }
+    return _decodeJwtExpiry(token);
+  }
+
+  DateTime? _decodeJwtExpiry(String token) {
+    final parts = token.split('.');
+    if (parts.length < 2) {
+      return null;
+    }
+    try {
+      final normalized = base64.normalize(
+        parts[1].replaceAll('-', '+').replaceAll('_', '/'),
+      );
+      final payload = jsonDecode(utf8.decode(base64.decode(normalized)));
+      final exp = payload['exp'];
+      if (exp is int) {
+        return DateTime.fromMillisecondsSinceEpoch(exp * 1000);
+      }
+      if (exp is num) {
+        return DateTime.fromMillisecondsSinceEpoch((exp * 1000).round());
+      }
+    } catch (_) {
+      return null;
+    }
+    return null;
+  }
+
+  Future<void> _handleSessionExpired(String reason) async {
+    print('Gateway session expired: ' + reason);
+    _cancelScheduledRefresh();
+    await clearUserData();
+    _authResult = null;
+    _currentUser = null;
+    _isLoggedIn = false;
+    _lastError = reason;
+    notifyListeners();
   }
 
   Future<void> _persistAuthSession(
@@ -380,3 +701,4 @@ class AuthProvider extends ChangeNotifier {
     );
   }
 }
+
