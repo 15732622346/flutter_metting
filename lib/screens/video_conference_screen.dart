@@ -1,10 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
-
-import 'package:flutter/material.dart' hide ConnectionState;
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:livekit_client/livekit_client.dart' hide RoomEvent;
+import 'package:livekit_client/livekit_client.dart' as lk;
 
 import '../models/room_join_data.dart';
 import '../services/livekit_service.dart';
@@ -30,15 +29,16 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
 
   // LiveKit 会话状态
   final LiveKitService _liveKitService = LiveKitService();
-  StreamSubscription<List<RemoteParticipant>>? _participantsSubscription;
-  StreamSubscription<VideoTrack?>? _localVideoTrackSubscription;
-  StreamSubscription<ConnectionState>? _connectionStateSubscription;
-  StreamSubscription<RoomEvent>? _roomEventSubscription;
+  StreamSubscription<List<lk.RemoteParticipant>>? _participantsSubscription;
+  StreamSubscription<lk.VideoTrack?>? _localVideoTrackSubscription;
+  StreamSubscription<lk.ConnectionState>? _connectionStateSubscription;
+  StreamSubscription<LiveKitEvent>? _roomEventSubscription;
 
-  List<RemoteParticipant> _remoteParticipants = const <RemoteParticipant>[];
-  VideoTrack? _primaryVideoTrack;
-  RemoteParticipant? _primaryParticipant;
-  VideoTrack? _localVideoTrack;
+  List<lk.RemoteParticipant> _remoteParticipants =
+      const <lk.RemoteParticipant>[];
+  lk.VideoTrack? _primaryVideoTrack;
+  lk.RemoteParticipant? _primaryParticipant;
+  lk.VideoTrack? _localVideoTrack;
   bool _isConnectingRoom = false;
   bool _isRoomConnected = false;
   String? _connectionError;
@@ -107,7 +107,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
     action();
 
     // 2秒后重置点击状态（稍长一些，因为全屏操作比较重要）
-    Future.delayed(Duration(seconds: 2), () {
+    Future.delayed(const Duration(seconds: 2), () {
       if (mounted) {
         setState(() {
           _isFullscreenButtonClickable = true;
@@ -134,8 +134,17 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
     });
 
     try {
+      var normalizedWsUrl = _session.wsUrl.trim();
+      if (normalizedWsUrl.endsWith('/rtc')) {
+        normalizedWsUrl = normalizedWsUrl.substring(0, normalizedWsUrl.length - 4);
+      } else if (normalizedWsUrl.endsWith('/rtc/')) {
+        normalizedWsUrl = normalizedWsUrl.substring(0, normalizedWsUrl.length - 5);
+      }
+      if (normalizedWsUrl.endsWith('/')) {
+        normalizedWsUrl = normalizedWsUrl.substring(0, normalizedWsUrl.length - 1);
+      }
       await _liveKitService.connectToRoom(
-        _session.wsUrl,
+        normalizedWsUrl,
         _session.liveKitToken,
       );
 
@@ -144,10 +153,10 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
           _liveKitService.connectionState.listen((state) {
         if (!mounted) return;
         setState(() {
-          _isRoomConnected = state == ConnectionState.connected;
-          _isConnectingRoom = state == ConnectionState.connecting ||
-              state == ConnectionState.reconnecting;
-          if (state == ConnectionState.disconnected && _isRoomConnected) {
+          _isRoomConnected = state == lk.ConnectionState.connected;
+          _isConnectingRoom = state == lk.ConnectionState.connecting ||
+              state == lk.ConnectionState.reconnecting;
+          if (state == lk.ConnectionState.disconnected && _isRoomConnected) {
             _connectionError ??= '房间连接已断开';
           }
         });
@@ -177,8 +186,8 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
       _roomEventSubscription = _liveKitService.events.listen(_handleRoomEvent);
 
       final initialRemotes =
-          _liveKitService.room?.remoteParticipants.values.toList() ??
-              const <RemoteParticipant>[];
+          _liveKitService.room?.participants.values.toList() ??
+              const <lk.RemoteParticipant>[];
 
       if (mounted) {
         setState(() {
@@ -189,12 +198,17 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
 
       _updatePrimaryVideoTrack(participants: initialRemotes);
 
-      final initialLocalTrack = _liveKitService
-                  .room?.localParticipant?.videoTrackPublications.isNotEmpty ==
-              true
-          ? _liveKitService.room!.localParticipant!.videoTrackPublications.first
-              .track as VideoTrack?
-          : null;
+      lk.VideoTrack? initialLocalTrack;
+      final localParticipant = _liveKitService.room?.localParticipant;
+      if (localParticipant != null) {
+        for (final publication in localParticipant.videoTracks) {
+          final track = publication.track;
+          if (track != null) {
+            initialLocalTrack = track;
+            break;
+          }
+        }
+      }
 
       if (initialLocalTrack != null && mounted) {
         setState(() {
@@ -218,70 +232,59 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
     }
   }
 
-  void _handleRoomEvent(RoomEvent event) {
+  void _handleRoomEvent(LiveKitEvent event) {
     switch (event.type) {
-      case RoomEventType.trackPublished:
-      case RoomEventType.trackUnpublished:
-      case RoomEventType.participantConnected:
-      case RoomEventType.participantDisconnected:
-      case RoomEventType.roomUpdate:
+      case LiveKitEventType.trackPublished:
+      case LiveKitEventType.trackUnpublished:
+      case LiveKitEventType.participantConnected:
+      case LiveKitEventType.participantDisconnected:
+      case LiveKitEventType.trackSubscribed:
+      case LiveKitEventType.trackUnsubscribed:
         _updatePrimaryVideoTrack();
-
         break;
-
-      case RoomEventType.connectionError:
+      case LiveKitEventType.dataReceived:
+        _handleIncomingData(event);
+        break;
+      case LiveKitEventType.disconnected:
         if (mounted) {
           setState(() {
-            _connectionError = event.data['error']?.toString() ?? '房间连接异常';
+            _connectionError = event.data['reason']?.toString() ?? '房间连接已断开';
           });
         }
-
         break;
-
-      case RoomEventType.dataReceived:
-        _handleIncomingData(event);
-
-        break;
-
       default:
         break;
     }
   }
 
-  void _handleIncomingData(RoomEvent event) {
+  void _handleIncomingData(LiveKitEvent event) {
     final rawData = event.data['data'];
-
     final participant = event.data['participant'];
 
-    if (participant is LocalParticipant) {
+    if (participant is lk.LocalParticipant) {
       return;
     }
 
     if (rawData is Uint8List) {
       try {
         final decoded = utf8.decode(rawData);
-
         final payload = jsonDecode(decoded);
 
         if (payload is Map<String, dynamic> && payload['type'] == 'chat') {
           final senderName = _resolveParticipantName(participant) ??
               payload['sender']?.toString() ??
               '匿名用户';
-
           final message = payload['message']?.toString() ?? decoded;
-
           _addChatMessage(ChatMessage(
             username: senderName,
             message: message,
             isSystem: false,
             isOwn: false,
           ));
-
           return;
         }
 
         final senderName = _resolveParticipantName(participant) ?? '系统消息';
-
         _addChatMessage(ChatMessage(
           username: senderName,
           message: decoded,
@@ -290,7 +293,6 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
         ));
       } catch (_) {
         final senderName = _resolveParticipantName(participant) ?? '系统消息';
-
         _addChatMessage(ChatMessage(
           username: senderName,
           message: '收到了一条消息',
@@ -301,21 +303,17 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
     }
   }
 
-  void _updatePrimaryVideoTrack({List<RemoteParticipant>? participants}) {
+  void _updatePrimaryVideoTrack({List<lk.RemoteParticipant>? participants}) {
     final list = participants ?? _remoteParticipants;
 
-    RemoteParticipant? candidateParticipant;
-
-    VideoTrack? candidateTrack;
+    lk.RemoteParticipant? candidateParticipant;
+    lk.VideoTrack? candidateTrack;
 
     for (final participant in list) {
       final track = _firstVideoTrack(participant);
-
       if (track != null) {
         candidateParticipant = participant;
-
         candidateTrack = track;
-
         break;
       }
     }
@@ -329,36 +327,30 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
 
     setState(() {
       _primaryParticipant = candidateParticipant;
-
       _primaryVideoTrack = candidateTrack;
     });
   }
 
-  VideoTrack? _firstVideoTrack(RemoteParticipant participant) {
-    for (final publication in participant.videoTrackPublications) {
+  lk.VideoTrack? _firstVideoTrack(lk.RemoteParticipant participant) {
+    for (final publication in participant.videoTracks) {
       final track = publication.track;
-
-      if (track is VideoTrack && publication.subscribed == true) {
+      if (track != null && publication.subscribed) {
         return track;
       }
     }
-
     return null;
   }
 
   String? _resolveParticipantName(dynamic participant) {
-    if (participant is Participant) {
-      final name = participant.name;
-
-      if (name != null && name.trim().isNotEmpty) {
-        return name.trim();
+    if (participant is lk.Participant) {
+      final trimmedName = participant.name.trim();
+      if (trimmedName.isNotEmpty) {
+        return trimmedName;
       }
-
       if (participant.identity.isNotEmpty) {
         return participant.identity;
       }
     }
-
     return null;
   }
 
@@ -415,7 +407,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
     _chatMessages = [
       ChatMessage(
         username: '系统',
-        message: '系统：欢迎 ${participantName} 加入 ${_session.roomName}',
+        message: '系统：欢迎 $participantName 加入 ${_session.roomName}',
         isSystem: true,
       ),
       ChatMessage(
@@ -796,31 +788,22 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
               alignment: Alignment.centerRight,
               child: RichText(
                 text: TextSpan(
-                  style: const TextStyle(fontSize: 14),
+                  style: const TextStyle(fontSize: 14, color: Colors.white),
                   children: [
-                    const TextSpan(
-                      text: '麦位：',
-                      style: TextStyle(color: Colors.white),
-                    ),
+                    const TextSpan(text: '麦位数 '),
                     TextSpan(
-                      text: '${_totalMicSeats}人',
-                      style: const TextStyle(color: Color(0xFFffe200)), // 黄色数字
+                      text: '$_totalMicSeats 个, ',
+                      style: const TextStyle(color: Color(0xFFffe200)),
                     ),
-                    const TextSpan(
-                      text: ' 上限：',
-                      style: TextStyle(color: Colors.white),
-                    ),
+                    const TextSpan(text: '上限 '),
                     TextSpan(
-                      text: '${_occupiedMicSeats}人',
-                      style: const TextStyle(color: Color(0xFFffe200)), // 黄色数字
+                      text: '$_occupiedMicSeats 人, ',
+                      style: const TextStyle(color: Color(0xFFffe200)),
                     ),
-                    const TextSpan(
-                      text: ' 主持人：',
-                      style: TextStyle(color: Colors.white),
-                    ),
+                    const TextSpan(text: '主持人：'),
                     TextSpan(
                       text: _moderator,
-                      style: const TextStyle(color: Color(0xFFffe200)), // 黄色文字
+                      style: const TextStyle(color: Color(0xFFffe200)),
                     ),
                   ],
                 ),
@@ -898,10 +881,10 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
   Widget _buildInputContainer() {
     return Container(
       padding: const EdgeInsets.all(15),
-      decoration: BoxDecoration(
+      decoration: const BoxDecoration(
         color: Colors.white,
         border: Border(
-          top: BorderSide(color: const Color(0xFFe0e0e0), width: 1), // #e0e0e0
+          top: BorderSide(color: Color(0xFFe0e0e0), width: 1),
         ),
       ),
       child: Row(
@@ -1082,7 +1065,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
         );
       } catch (e) {
         // 如果有SnackBar正在显示，会抛出异常，忽略即可
-        print('Toast already visible, ignoring new toast');
+        debugPrint('Toast already visible, ignoring new toast');
       }
     }
   }
