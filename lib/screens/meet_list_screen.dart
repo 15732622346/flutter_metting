@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../core/user_manager.dart';
@@ -25,6 +26,7 @@ class _MeetListPageState extends State<MeetListPage>
 
   final RoomListService _roomListService = RoomListService();
   final GatewayApiService _gatewayService = GatewayApiService();
+  static const Duration _tokenRefreshSafetyWindow = Duration(minutes: 5);
   List<Room> _rooms = const <Room>[];
   bool _isLoadingRooms = false;
   String? _roomListError;
@@ -245,6 +247,193 @@ class _MeetListPageState extends State<MeetListPage>
     return '';
   }
 
+  Future<String> _ensureValidJwtToken(
+    Map<String, dynamic> stored,
+    String fallbackUsername,
+  ) async {
+    final currentToken = _resolveJwtToken(stored);
+    if (currentToken.isEmpty) {
+      return currentToken;
+    }
+
+    final expiresAt = _parseDateValue(
+          stored['accessExpiresAt'] ?? stored['access_expires_at'],
+        ) ??
+        _parseDateValue(
+          (stored['tokens'] as Map<String, dynamic>?)?['access_expires_at'],
+        ) ??
+        _decodeJwtExpiry(currentToken);
+
+    final now = DateTime.now();
+    final shouldRefresh = expiresAt != null &&
+        !expiresAt.isAfter(now.add(_tokenRefreshSafetyWindow));
+
+    if (!shouldRefresh) {
+      return currentToken;
+    }
+
+    final refreshToken = _resolveRefreshToken(stored);
+    if (refreshToken == null || refreshToken.isEmpty) {
+      throw Exception('登录状态已过期，请重新登录');
+    }
+
+    try {
+      final refreshResult =
+          await _gatewayService.refreshAuthToken(refreshToken: refreshToken);
+
+      if (!refreshResult.success || !refreshResult.hasJwtToken) {
+        throw Exception(
+          refreshResult.error ?? refreshResult.message ?? 'Token刷新失败，请重新登录',
+        );
+      }
+
+      final newToken =
+          refreshResult.jwtToken ?? refreshResult.accessToken ?? currentToken;
+
+      stored['jwtToken'] = newToken;
+      stored['accessToken'] = refreshResult.accessToken ?? newToken;
+      if (refreshResult.accessExpiresAt != null) {
+        stored['accessExpiresAt'] =
+            refreshResult.accessExpiresAt!.toIso8601String();
+      } else {
+        stored.remove('accessExpiresAt');
+      }
+      if (refreshResult.refreshExpiresAt != null) {
+        stored['refreshExpiresAt'] =
+            refreshResult.refreshExpiresAt!.toIso8601String();
+      }
+      if (refreshResult.refreshToken?.isNotEmpty == true) {
+        stored['refreshToken'] = refreshResult.refreshToken;
+      } else if (!stored.containsKey('refreshToken') &&
+          refreshToken.isNotEmpty) {
+        stored['refreshToken'] = refreshToken;
+      }
+      if (refreshResult.tokens != null) {
+        stored['tokens'] = refreshResult.tokens;
+      }
+
+      final usernameToPersist = fallbackUsername.isNotEmpty
+          ? fallbackUsername
+          : (_coalesceStrings(
+                stored,
+                const ['userName', 'user_name', 'username'],
+              ) ??
+              '');
+
+      if (usernameToPersist.isNotEmpty) {
+        await UserManager.saveLoginState(
+          username: usernameToPersist,
+          extraData: stored,
+        );
+      }
+
+      return newToken;
+    } catch (error) {
+      final message = error.toString();
+      final displayMessage = message.startsWith('Exception: ')
+          ? message.substring('Exception: '.length)
+          : message;
+      throw Exception(displayMessage);
+    }
+  }
+
+  String? _resolveRefreshToken(Map<String, dynamic>? stored) {
+    final direct = _coalesceStrings(
+      stored,
+      const ['refreshToken', 'refresh_token'],
+    );
+    if (direct != null && direct.isNotEmpty) {
+      return direct;
+    }
+    final tokens = stored?['tokens'];
+    if (tokens is Map<String, dynamic>) {
+      final nested = _coalesceStrings(
+        tokens.cast<String, dynamic>(),
+        const ['refresh_token'],
+      );
+      if (nested != null && nested.isNotEmpty) {
+        return nested;
+      }
+    }
+    return null;
+  }
+
+  DateTime? _parseDateValue(dynamic value) {
+    if (value == null) {
+      return null;
+    }
+    if (value is DateTime) {
+      return value;
+    }
+    if (value is String) {
+      final trimmed = value.trim();
+      if (trimmed.isEmpty) {
+        return null;
+      }
+      final parsed = DateTime.tryParse(trimmed);
+      if (parsed != null) {
+        return parsed;
+      }
+      final asInt = int.tryParse(trimmed);
+      if (asInt != null) {
+        if (asInt > 1000000000000) {
+          return DateTime.fromMillisecondsSinceEpoch(asInt);
+        }
+        if (asInt > 0) {
+          return DateTime.fromMillisecondsSinceEpoch(asInt * 1000);
+        }
+      }
+      final asDouble = double.tryParse(trimmed);
+      if (asDouble != null) {
+        final millis = asDouble > 1000000000000
+            ? asDouble.round()
+            : (asDouble * 1000).round();
+        if (millis > 0) {
+          return DateTime.fromMillisecondsSinceEpoch(millis);
+        }
+      }
+    }
+    if (value is int) {
+      if (value > 1000000000000) {
+        return DateTime.fromMillisecondsSinceEpoch(value);
+      }
+      if (value > 0) {
+        return DateTime.fromMillisecondsSinceEpoch(value * 1000);
+      }
+    }
+    if (value is double) {
+      final millis =
+          value > 1000000000000 ? value.round() : (value * 1000).round();
+      if (millis > 0) {
+        return DateTime.fromMillisecondsSinceEpoch(millis);
+      }
+    }
+    return null;
+  }
+
+  DateTime? _decodeJwtExpiry(String token) {
+    final parts = token.split('.');
+    if (parts.length < 2) {
+      return null;
+    }
+    try {
+      final normalized = base64.normalize(
+        parts[1].replaceAll('-', '+').replaceAll('_', '/'),
+      );
+      final payload = jsonDecode(utf8.decode(base64.decode(normalized)));
+      final exp = payload['exp'];
+      if (exp is int) {
+        return DateTime.fromMillisecondsSinceEpoch(exp * 1000);
+      }
+      if (exp is num) {
+        return DateTime.fromMillisecondsSinceEpoch((exp * 1000).round());
+      }
+    } catch (_) {
+      return null;
+    }
+    return null;
+  }
+
   void _showMeetingEndedMessage() {
     // 先清除现有的Banner，避免叠加
     ScaffoldMessenger.of(context).clearMaterialBanners();
@@ -315,19 +504,38 @@ class _MeetListPageState extends State<MeetListPage>
       GatewayRoomDetailResult detailResult;
 
       if (isLoggedIn && storedUserData != null) {
+        final storedUsername = loginState['username'] as String? ?? '';
         final userName = _coalesceStrings(
               storedUserData,
               const ['userName', 'user_name', 'username'],
             ) ??
-            (loginState['username'] as String? ?? '');
-        final jwtToken = _resolveJwtToken(storedUserData);
+            storedUsername;
+
+        String jwtToken;
+        try {
+          jwtToken = await _ensureValidJwtToken(
+            storedUserData,
+            userName.isNotEmpty ? userName : storedUsername,
+          );
+        } catch (error) {
+          await UserManager.clearLoginState();
+          setState(() {
+            _isLoggedIn = false;
+          });
+          final message = error.toString();
+          final displayMessage = message.startsWith('Exception: ')
+              ? message.substring('Exception: '.length)
+              : message;
+          throw Exception(displayMessage);
+        }
+
         final wsUrl = _coalesceStrings(
           storedUserData,
           const ['wsUrl', 'ws_url'],
         );
 
         if (userName.isEmpty || jwtToken.isEmpty) {
-          throw Exception('????????????????');
+          throw Exception('登录状态已失效，请重新登录');
         }
 
         detailResult = await _gatewayService.joinRoom(

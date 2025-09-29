@@ -150,6 +150,20 @@ class GatewayApiService {
     return GatewayRoomDetailResult.fromResponse(response);
   }
 
+  Future<GatewayAuthResult> refreshAuthToken({
+    required String refreshToken,
+  }) async {
+    final response = await _callGateway(
+      endpoint: '/api/v1/auth/refresh',
+      method: 'POST',
+      data: {
+        'refresh_token': refreshToken,
+      },
+    );
+
+    return GatewayAuthResult.fromResponse(response);
+  }
+
   Future<GatewayRoomDetailResult> joinRoom({
     required String roomId,
     required String inviteCode,
