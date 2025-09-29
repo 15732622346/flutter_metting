@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -22,6 +23,15 @@ class VideoConferenceScreen extends StatefulWidget {
   State<VideoConferenceScreen> createState() => _VideoConferenceScreenState();
 }
 
+class _ParticipantRoleInfo {
+  const _ParticipantRoleInfo({required this.role, this.userUid});
+
+  final int role;
+  final int? userUid;
+
+  bool get isHostOrAdmin => role >= 2;
+}
+
 class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _chatScrollController = ScrollController();
@@ -38,7 +48,13 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
       const <lk.RemoteParticipant>[];
   lk.VideoTrack? _primaryVideoTrack;
   lk.RemoteParticipant? _primaryParticipant;
+  lk.RemoteParticipant? _hostParticipant;
+  lk.VideoTrack? _hostScreenShareTrack;
+  lk.VideoTrack? _hostCameraTrack;
   lk.VideoTrack? _localVideoTrack;
+  int? _hostUserUid;
+  String? _hostIdentity;
+  bool _isPrimaryScreenShare = false;
   bool _isConnectingRoom = false;
   bool _isRoomConnected = false;
   String? _connectionError;
@@ -136,12 +152,15 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
     try {
       var normalizedWsUrl = _session.wsUrl.trim();
       if (normalizedWsUrl.endsWith('/rtc')) {
-        normalizedWsUrl = normalizedWsUrl.substring(0, normalizedWsUrl.length - 4);
+        normalizedWsUrl =
+            normalizedWsUrl.substring(0, normalizedWsUrl.length - 4);
       } else if (normalizedWsUrl.endsWith('/rtc/')) {
-        normalizedWsUrl = normalizedWsUrl.substring(0, normalizedWsUrl.length - 5);
+        normalizedWsUrl =
+            normalizedWsUrl.substring(0, normalizedWsUrl.length - 5);
       }
       if (normalizedWsUrl.endsWith('/')) {
-        normalizedWsUrl = normalizedWsUrl.substring(0, normalizedWsUrl.length - 1);
+        normalizedWsUrl =
+            normalizedWsUrl.substring(0, normalizedWsUrl.length - 1);
       }
       await _liveKitService.connectToRoom(
         normalizedWsUrl,
@@ -170,7 +189,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
           _remoteParticipants = participants;
           _occupiedMicSeats = participants.length + 1;
         });
-        _updatePrimaryVideoTrack(participants: participants);
+        _updateActiveVideoTracks(participants: participants);
       });
 
       _localVideoTrackSubscription?.cancel();
@@ -196,7 +215,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
         });
       }
 
-      _updatePrimaryVideoTrack(participants: initialRemotes);
+      _updateActiveVideoTracks(participants: initialRemotes);
 
       lk.VideoTrack? initialLocalTrack;
       final localParticipant = _liveKitService.room?.localParticipant;
@@ -240,7 +259,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
       case LiveKitEventType.participantDisconnected:
       case LiveKitEventType.trackSubscribed:
       case LiveKitEventType.trackUnsubscribed:
-        _updatePrimaryVideoTrack();
+        _updateActiveVideoTracks();
         break;
       case LiveKitEventType.dataReceived:
         _handleIncomingData(event);
@@ -303,31 +322,317 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
     }
   }
 
-  void _updatePrimaryVideoTrack({List<lk.RemoteParticipant>? participants}) {
-    final list = participants ?? _remoteParticipants;
+  Map<String, dynamic>? _decodeParticipantMetadata(String? metadata) {
+    if (metadata == null) {
+      return null;
+    }
+    final trimmed = metadata.trim();
+    if (trimmed.isEmpty || trimmed == 'null' || trimmed == 'undefined') {
+      return null;
+    }
 
-    lk.RemoteParticipant? candidateParticipant;
-    lk.VideoTrack? candidateTrack;
+    Map<String, dynamic>? tryParse(String value) {
+      try {
+        final result = jsonDecode(value);
+        if (result is Map<String, dynamic>) {
+          return result;
+        }
+        if (result is String) {
+          return tryParse(result);
+        }
+      } catch (_) {
+        // ignore parse errors
+      }
+      return null;
+    }
 
-    for (final participant in list) {
-      final track = _firstVideoTrack(participant);
-      if (track != null) {
-        candidateParticipant = participant;
-        candidateTrack = track;
-        break;
+    final direct = tryParse(trimmed);
+    if (direct != null) {
+      return direct;
+    }
+
+    final normalized = _normalizeBase64(trimmed);
+    if (normalized != null) {
+      try {
+        final decoded = utf8.decode(base64Decode(normalized));
+        final parsed = tryParse(decoded);
+        if (parsed != null) {
+          return parsed;
+        }
+      } catch (_) {
+        // ignore base64 errors
       }
     }
 
-    if (!mounted) return;
+    return null;
+  }
 
-    if (_primaryVideoTrack == candidateTrack &&
-        _primaryParticipant == candidateParticipant) {
+  String? _normalizeBase64(String value) {
+    final candidate = value.replaceAll('\n', '').replaceAll('\r', '');
+    final regex = RegExp(r'^[A-Za-z0-9+/=_-]+$');
+    if (!regex.hasMatch(candidate)) {
+      return null;
+    }
+    final normalized = candidate.replaceAll('-', '+').replaceAll('_', '/');
+    final remainder = normalized.length % 4;
+    if (remainder == 0) {
+      return normalized;
+    }
+    return normalized + '=' * (4 - remainder);
+  }
+
+  int? _tryParseInt(dynamic value) {
+    if (value is int) {
+      return value;
+    }
+    if (value is num) {
+      if (value == value.floor()) {
+        return value.toInt();
+      }
+    }
+    if (value is String) {
+      final trimmed = value.trim();
+      if (trimmed.isEmpty) {
+        return null;
+      }
+      return int.tryParse(trimmed);
+    }
+    return null;
+  }
+
+  int? _extractUserUidFrom(dynamic source) {
+    if (source is Map) {
+      for (final entry in source.entries) {
+        final key = entry.key;
+        final value = entry.value;
+        if (key is String) {
+          switch (key) {
+            case 'user_uid':
+            case 'userUid':
+            case 'uid':
+            case 'user_id':
+            case 'userId':
+            case 'participant_uid':
+            case 'participantUid':
+              final parsed = _tryParseInt(value);
+              if (parsed != null) {
+                return parsed;
+              }
+              break;
+          }
+        }
+      }
+      for (final value in source.values) {
+        final nested = _extractUserUidFrom(value);
+        if (nested != null) {
+          return nested;
+        }
+      }
+    } else if (source is Iterable) {
+      for (final value in source) {
+        final nested = _extractUserUidFrom(value);
+        if (nested != null) {
+          return nested;
+        }
+      }
+    } else if (source is String) {
+      final decoded = _decodeParticipantMetadata(source);
+      if (decoded != null) {
+        return _extractUserUidFrom(decoded);
+      }
+      final parsed = _tryParseInt(source);
+      if (parsed != null) {
+        return parsed;
+      }
+    } else {
+      final parsed = _tryParseInt(source);
+      if (parsed != null) {
+        return parsed;
+      }
+    }
+    return null;
+  }
+
+  _ParticipantRoleInfo _participantRoleInfo(lk.Participant participant) {
+    final metadataMap = _decodeParticipantMetadata(participant.metadata);
+    int role = 1;
+    int? userUid;
+
+    if (metadataMap != null) {
+      final roleCandidate = metadataMap['role'] ??
+          metadataMap['role_id'] ??
+          metadataMap['roleId'];
+      final parsedRole = _tryParseInt(roleCandidate);
+      if (parsedRole != null) {
+        role = parsedRole;
+      } else if (roleCandidate is String) {
+        final trimmed = roleCandidate.trim();
+        if (trimmed.isNotEmpty) {
+          role = int.tryParse(trimmed) ?? role;
+        }
+      }
+      userUid = _extractUserUidFrom(metadataMap);
+    }
+
+    userUid ??= _tryParseInt(
+      participant.identity.replaceFirst(RegExp(r'^user[_-]?'), ''),
+    );
+
+    return _ParticipantRoleInfo(role: role, userUid: userUid);
+  }
+
+  bool _matchesHostIdentity(lk.Participant participant) {
+    if (_hostIdentity == null || _hostIdentity!.isEmpty) {
+      return false;
+    }
+    final identity = participant.identity.trim();
+    if (identity == _hostIdentity) {
+      return true;
+    }
+    final normalized = identity.replaceFirst(RegExp(r'^user[_-]?'), '');
+    if (normalized == _hostIdentity) {
+      return true;
+    }
+    final targetInt = _tryParseInt(_hostIdentity);
+    if (targetInt != null) {
+      final identityInt = _tryParseInt(normalized);
+      if (identityInt != null && identityInt == targetInt) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  lk.RemoteParticipant? _selectHostParticipant(
+      List<lk.RemoteParticipant> participants) {
+    if (participants.isEmpty) {
+      return null;
+    }
+
+    lk.RemoteParticipant? roleCandidate;
+
+    for (final participant in participants) {
+      final roleInfo = _participantRoleInfo(participant);
+      if (_hostUserUid != null && roleInfo.userUid == _hostUserUid) {
+        return participant;
+      }
+      if (_matchesHostIdentity(participant)) {
+        return participant;
+      }
+      if (roleInfo.isHostOrAdmin && roleCandidate == null) {
+        roleCandidate = participant;
+      }
+    }
+
+    if (roleCandidate != null) {
+      return roleCandidate;
+    }
+
+    if (_hostIdentity != null) {
+      for (final participant in participants) {
+        if (_matchesHostIdentity(participant)) {
+          return participant;
+        }
+      }
+    }
+
+    if (_hostUserUid != null) {
+      for (final participant in participants) {
+        final roleInfo = _participantRoleInfo(participant);
+        if (roleInfo.userUid == _hostUserUid) {
+          return participant;
+        }
+      }
+    }
+
+    return participants.first;
+  }
+
+  lk.VideoTrack? _firstVideoTrackOfSource(
+      lk.RemoteParticipant participant, lk.TrackSource source) {
+    for (final publication in participant.videoTracks) {
+      final track = publication.track;
+      if (track == null || !publication.subscribed) {
+        continue;
+      }
+      if (publication.source == source) {
+        return track;
+      }
+      if (source == lk.TrackSource.screenShareVideo &&
+          publication.isScreenShare) {
+        return track;
+      }
+    }
+    return null;
+  }
+
+  void _updateActiveVideoTracks({List<lk.RemoteParticipant>? participants}) {
+    final list = participants ?? _remoteParticipants;
+
+    final hostParticipant =
+        list.isNotEmpty ? _selectHostParticipant(list) : null;
+
+    lk.RemoteParticipant? screenShareParticipant;
+    lk.VideoTrack? screenShareTrack;
+
+    if (hostParticipant != null) {
+      final hostShare = _firstVideoTrackOfSource(
+          hostParticipant, lk.TrackSource.screenShareVideo);
+      if (hostShare != null) {
+        screenShareParticipant = hostParticipant;
+        screenShareTrack = hostShare;
+      }
+    }
+
+    if (screenShareTrack == null) {
+      for (final participant in list) {
+        final track = _firstVideoTrackOfSource(
+            participant, lk.TrackSource.screenShareVideo);
+        if (track != null) {
+          screenShareParticipant = participant;
+          screenShareTrack = track;
+          break;
+        }
+      }
+    }
+
+    final hostCameraTrack = hostParticipant != null
+        ? _firstVideoTrackOfSource(hostParticipant, lk.TrackSource.camera)
+        : null;
+
+    lk.RemoteParticipant? fallbackParticipant =
+        screenShareParticipant ?? hostParticipant;
+    if (fallbackParticipant == null && list.isNotEmpty) {
+      fallbackParticipant = list.first;
+    }
+
+    lk.VideoTrack? fallbackTrack = screenShareTrack;
+    if (fallbackTrack == null && fallbackParticipant != null) {
+      fallbackTrack = _firstVideoTrack(fallbackParticipant);
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    final shouldUpdate = _hostParticipant != hostParticipant ||
+        _hostScreenShareTrack != screenShareTrack ||
+        _hostCameraTrack != hostCameraTrack ||
+        _primaryVideoTrack != fallbackTrack ||
+        _primaryParticipant != fallbackParticipant ||
+        _isPrimaryScreenShare != (screenShareTrack != null);
+
+    if (!shouldUpdate) {
       return;
     }
 
     setState(() {
-      _primaryParticipant = candidateParticipant;
-      _primaryVideoTrack = candidateTrack;
+      _hostParticipant = hostParticipant;
+      _hostScreenShareTrack = screenShareTrack;
+      _hostCameraTrack = hostCameraTrack;
+      _primaryParticipant = fallbackParticipant;
+      _primaryVideoTrack = fallbackTrack;
+      _isPrimaryScreenShare = screenShareTrack != null;
     });
   }
 
@@ -389,6 +694,39 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
 
     if (hostName is String && hostName.trim().isNotEmpty) {
       _moderator = hostName.trim();
+    }
+
+    final hostIdCandidates = [
+      roomInfo['host_user_id'],
+      roomInfo['hostUserId'],
+      roomInfo['host_uid'],
+      roomInfo['hostUid'],
+      roomInfo['hostUserUid'],
+      roomInfo['creator_user_id'],
+      roomInfo['creatorUserId'],
+    ];
+    for (final candidate in hostIdCandidates) {
+      final parsed = _tryParseInt(candidate);
+      if (parsed != null) {
+        _hostUserUid = parsed;
+        break;
+      }
+    }
+
+    final identityCandidates = [
+      roomInfo['host_identity'],
+      roomInfo['hostIdentity'],
+      roomInfo['host_livekit_identity'],
+      roomInfo['hostLivekitIdentity'],
+    ];
+    for (final candidate in identityCandidates) {
+      if (candidate is String) {
+        final trimmed = candidate.trim();
+        if (trimmed.isNotEmpty) {
+          _hostIdentity = trimmed;
+          break;
+        }
+      }
     }
 
     final maxSlots = roomInfo['max_mic_slots'] ?? roomInfo['maxMicSlots'];
@@ -461,6 +799,13 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
         _connectionError!,
         icon: Icons.error_outline,
       );
+    } else if (_hostScreenShareTrack != null) {
+      content = VideoTrackWidget(
+        key: ValueKey('${_hostScreenShareTrack.hashCode}-screen-share'),
+        videoTrack: _hostScreenShareTrack!,
+        fit: BoxFit.contain,
+        showName: false,
+      );
     } else if (_primaryVideoTrack != null) {
       content = VideoTrackWidget(
         key: ValueKey(_primaryVideoTrack),
@@ -483,10 +828,10 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
       );
     } else {
       final hostDisplay =
-          _resolveParticipantName(_primaryParticipant) ?? _moderator;
+          _resolveParticipantName(_hostParticipant) ?? _moderator;
       content = _buildVideoStatus(
-        '等待主持人 $hostDisplay 开播',
-        icon: Icons.videocam_off,
+        '等待主持人 $hostDisplay 开始共享屏幕',
+        icon: Icons.desktop_windows,
       );
     }
 
@@ -652,6 +997,15 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
   }
 
   Widget _buildSmallVideoContent() {
+    if (_hostCameraTrack != null) {
+      return VideoTrackWidget(
+        key: ValueKey('${_hostCameraTrack.hashCode}-host-camera'),
+        videoTrack: _hostCameraTrack!,
+        fit: BoxFit.cover,
+        showName: false,
+      );
+    }
+
     if (_localVideoTrack != null) {
       return VideoTrackWidget(
         key: ValueKey(_localVideoTrack),
@@ -669,6 +1023,31 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
         fit: BoxFit.cover,
         showName: false,
       );
+    }
+
+    for (final participant in _remoteParticipants) {
+      final cameraTrack =
+          _firstVideoTrackOfSource(participant, lk.TrackSource.camera);
+      if (cameraTrack != null && cameraTrack != _primaryVideoTrack) {
+        return VideoTrackWidget(
+          key: ValueKey('${cameraTrack.hashCode}-remote-camera'),
+          videoTrack: cameraTrack,
+          fit: BoxFit.cover,
+          showName: false,
+        );
+      }
+    }
+
+    for (final participant in _remoteParticipants) {
+      final track = _firstVideoTrack(participant);
+      if (track != null && track != _primaryVideoTrack) {
+        return VideoTrackWidget(
+          key: ValueKey('${track.hashCode}-remote-fallback'),
+          videoTrack: track,
+          fit: BoxFit.cover,
+          showName: false,
+        );
+      }
     }
 
     return Container(
