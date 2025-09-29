@@ -21,8 +21,10 @@ class LoginRegisterPage extends StatefulWidget {
 class _LoginRegisterPageState extends State<LoginRegisterPage> {
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _accountController = TextEditingController();
+  final TextEditingController _nicknameController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
-  final TextEditingController _confirmPasswordController = TextEditingController();
+  final TextEditingController _confirmPasswordController =
+      TextEditingController();
   final GatewayApiService _gatewayService = GatewayApiService();
   bool _isCameraEnabled = false;
   bool _isMicrophoneEnabled = true;
@@ -38,6 +40,7 @@ class _LoginRegisterPageState extends State<LoginRegisterPage> {
   @override
   void dispose() {
     _accountController.dispose();
+    _nicknameController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
     super.dispose();
@@ -60,7 +63,14 @@ class _LoginRegisterPageState extends State<LoginRegisterPage> {
 
     try {
       if (_isRegisterMode) {
+        final nickname = _nicknameController.text.trim();
         final confirmPassword = _confirmPasswordController.text.trim();
+        if (nickname.isEmpty) {
+          messenger.showSnackBar(
+            const SnackBar(content: Text('请输入昵称')),
+          );
+          return;
+        }
         if (password != confirmPassword) {
           messenger.showSnackBar(
             const SnackBar(content: Text('两次输入的密码不一致，请重新确认')),
@@ -77,13 +87,15 @@ class _LoginRegisterPageState extends State<LoginRegisterPage> {
         final registerResult = await _gatewayService.register(
           username: username,
           password: password,
-          nickname: username,
+          nickname: nickname,
         );
 
         if (!registerResult.success) {
           messenger.showSnackBar(
             SnackBar(
-              content: Text(registerResult.error ?? registerResult.message ?? '注册失败，请稍后重试'),
+              content: Text(registerResult.error ??
+                  registerResult.message ??
+                  '注册失败，请稍后重试'),
             ),
           );
           return;
@@ -98,6 +110,7 @@ class _LoginRegisterPageState extends State<LoginRegisterPage> {
         setState(() {
           _isRegisterMode = false;
           _accountController.text = username;
+          _nicknameController.clear();
           _passwordController.clear();
           _confirmPasswordController.clear();
         });
@@ -112,14 +125,17 @@ class _LoginRegisterPageState extends State<LoginRegisterPage> {
       if (!loginResult.success || !loginResult.hasJwtToken) {
         messenger.showSnackBar(
           SnackBar(
-            content: Text(loginResult.error ?? loginResult.message ?? '登录失败，请稍后重试'),
+            content:
+                Text(loginResult.error ?? loginResult.message ?? '登录失败，请稍后重试'),
           ),
         );
         return;
       }
 
       final resolvedUsername =
-          (loginResult.userName?.trim().isNotEmpty ?? false) ? loginResult.userName!.trim() : username;
+          (loginResult.userName?.trim().isNotEmpty ?? false)
+              ? loginResult.userName!.trim()
+              : username;
 
       await UserManager.saveLoginState(
         username: resolvedUsername,
@@ -156,6 +172,7 @@ class _LoginRegisterPageState extends State<LoginRegisterPage> {
     setState(() {
       _isRegisterMode = !_isRegisterMode;
       _accountController.clear();
+      _nicknameController.clear();
       _passwordController.clear();
       _confirmPasswordController.clear();
     });
@@ -244,7 +261,8 @@ class _LoginRegisterPageState extends State<LoginRegisterPage> {
               decoration: InputDecoration(
                 hintText: _isRegisterMode ? '请输入注册账号' : '请输入登录账号',
                 border: InputBorder.none,
-                contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                contentPadding:
+                    EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 hintStyle: TextStyle(color: Colors.grey[500]),
               ),
               validator: (value) {
@@ -257,6 +275,35 @@ class _LoginRegisterPageState extends State<LoginRegisterPage> {
           ),
 
           SizedBox(height: 10), // 两个输入框之间的间隙改为10px
+
+          if (_isRegisterMode) ...[
+            // 昵称输入框
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.grey[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey[300]!),
+              ),
+              child: TextFormField(
+                controller: _nicknameController,
+                decoration: InputDecoration(
+                  hintText: '请输入昵称',
+                  border: InputBorder.none,
+                  contentPadding:
+                      EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  hintStyle: TextStyle(color: Colors.grey[500]),
+                ),
+                validator: (value) {
+                  if (_isRegisterMode &&
+                      (value == null || value.trim().isEmpty)) {
+                    return '请输入昵称';
+                  }
+                  return null;
+                },
+              ),
+            ),
+            SizedBox(height: 10),
+          ],
 
           // 密码输入框
           Container(
@@ -271,7 +318,8 @@ class _LoginRegisterPageState extends State<LoginRegisterPage> {
               decoration: InputDecoration(
                 hintText: _isRegisterMode ? '请输入注册密码' : '请输入登录密码',
                 border: InputBorder.none,
-                contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                contentPadding:
+                    EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 hintStyle: TextStyle(color: Colors.grey[500]),
               ),
               validator: (value) {
@@ -301,7 +349,8 @@ class _LoginRegisterPageState extends State<LoginRegisterPage> {
                 decoration: InputDecoration(
                   hintText: '请确认注册密码',
                   border: InputBorder.none,
-                  contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  contentPadding:
+                      EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   hintStyle: TextStyle(color: Colors.grey[500]),
                 ),
                 validator: (value) {
@@ -317,73 +366,74 @@ class _LoginRegisterPageState extends State<LoginRegisterPage> {
             ),
           ],
 
-        SizedBox(height: 10), // 与登录按钮之间的间隙
+          SizedBox(height: 10), // 与登录按钮之间的间隙
 
-        // 登录/注册按钮
-        SizedBox(
-          width: double.infinity,
-          height: 48,
-          child: ElevatedButton(
-            onPressed: _isLoading ? null : _handleSubmit,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Color(0xFF007AFF),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              elevation: 0,
-            ),
-            child: _isLoading
-              ? SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                  ),
-                )
-              : Text(
-                  _isRegisterMode ? '注册' : '登录',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+          // 登录/注册按钮
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: ElevatedButton(
+              onPressed: _isLoading ? null : _handleSubmit,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Color(0xFF007AFF),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
                 ),
-          ),
-        ),
-
-        SizedBox(height: 10), // 登录按钮与注册链接之间的间隙改为10px
-
-        // 注册链接（带边框）
-        Container(
-          padding: EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-          decoration: BoxDecoration(
-            border: Border.all(
-              color: Colors.grey[300]!,
-              width: 1,
-            ),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Flexible(
-                child: Text(
-                  _isRegisterMode ? '已有账号？' : '没有账号？',
-                  style: TextStyle(color: Colors.grey[600], fontSize: 14),
-                ),
+                elevation: 0,
               ),
-              GestureDetector(
-                onTap: _toggleMode,
-                child: Text(
-                  _isRegisterMode ? '点我登录' : '点我注册',
-                  style: TextStyle(
-                    color: Color(0xFF007AFF),
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
+              child: _isLoading
+                  ? SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                    )
+                  : Text(
+                      _isRegisterMode ? '注册' : '登录',
+                      style:
+                          TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                    ),
+            ),
+          ),
+
+          SizedBox(height: 10), // 登录按钮与注册链接之间的间隙改为10px
+
+          // 注册链接（带边框）
+          Container(
+            padding: EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+            decoration: BoxDecoration(
+              border: Border.all(
+                color: Colors.grey[300]!,
+                width: 1,
+              ),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Flexible(
+                  child: Text(
+                    _isRegisterMode ? '已有账号？' : '没有账号？',
+                    style: TextStyle(color: Colors.grey[600], fontSize: 14),
                   ),
                 ),
-              ),
-            ],
+                GestureDetector(
+                  onTap: _toggleMode,
+                  child: Text(
+                    _isRegisterMode ? '点我登录' : '点我注册',
+                    style: TextStyle(
+                      color: Color(0xFF007AFF),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
         ],
       ),
     );
@@ -455,5 +505,4 @@ class _LoginRegisterPageState extends State<LoginRegisterPage> {
       ],
     );
   }
-
 }
