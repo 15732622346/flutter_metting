@@ -855,12 +855,11 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
           },
           onPanUpdate: (details) {
             setState(() {
-              // 更新拖动位置，限制在屏幕边界内
               final screenSize = MediaQuery.of(context).size;
               _floatingWindowY = (_floatingWindowY + details.delta.dy)
                   .clamp(0.0, screenSize.height - 30);
               _floatingWindowX = (_floatingWindowX - details.delta.dx)
-                  .clamp(0.0, screenSize.width - 75); // 60(width) + 15(padding)
+                  .clamp(0.0, screenSize.width - 75);
             });
           },
           child: Container(
@@ -885,18 +884,21 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
       );
     }
 
+    if (_hostCameraTrack == null) {
+      return const SizedBox.shrink();
+    }
+
     return Positioned(
       top: _floatingWindowY,
       right: _floatingWindowX + 15,
       child: GestureDetector(
         onPanUpdate: (details) {
           setState(() {
-            // 更新拖动位置，限制在屏幕边界内
             final screenSize = MediaQuery.of(context).size;
             _floatingWindowY = (_floatingWindowY + details.delta.dy)
-                .clamp(0.0, screenSize.height - 140); // 140是小窗口高度
+                .clamp(0.0, screenSize.height - 140);
             _floatingWindowX = (_floatingWindowX - details.delta.dx)
-                .clamp(0.0, screenSize.width - 135); // 120(width) + 15(padding)
+                .clamp(0.0, screenSize.width - 135);
           });
         },
         child: Container(
@@ -916,12 +918,10 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
           ),
           child: Stack(
             children: [
-              // 小视频内容
               ClipRRect(
                 borderRadius: BorderRadius.circular(3),
                 child: _buildSmallVideoContent(),
               ),
-              // 控制按钮
               Positioned(
                 top: 5,
                 right: 5,
@@ -947,7 +947,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
                     ),
                     child: const Center(
                       child: Text(
-                        '—',
+                        '收',
                         style: TextStyle(
                           color: Colors.black,
                           fontSize: 16,
