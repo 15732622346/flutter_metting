@@ -180,6 +180,36 @@ class GatewayApiService {
     );
   }
 
+  Future<GatewayActionResult> requestMicrophone({
+    required String roomId,
+    required int userUid,
+    required String jwtToken,
+    String? participantIdentity,
+    int? userId,
+    DateTime? requestTime,
+    String action = 'raise_hand',
+  }) async {
+    final payload = <String, dynamic>{
+      'room_id': roomId,
+      'user_uid': userUid,
+      'action': action,
+      if (participantIdentity != null && participantIdentity.isNotEmpty)
+        'participant_identity': participantIdentity,
+      if (userId != null) 'user_id': userId,
+      'request_time': (requestTime ?? DateTime.now()).toIso8601String(),
+    };
+
+    final response = await _callGateway(
+      endpoint: '/api/v1/participants/request-microphone',
+      method: 'POST',
+      data: payload,
+      headers:
+          jwtToken.isNotEmpty ? {'Authorization': 'Bearer ' + jwtToken} : null,
+    );
+
+    return GatewayActionResult.fromResponse(response);
+  }
+
   Future<Map<String, dynamic>> _callGateway({
     required String endpoint,
     required String method,
@@ -505,6 +535,30 @@ class GatewayRoomDetailResult {
       user: user,
       room: room,
       connection: connection,
+    );
+  }
+}
+
+class GatewayActionResult {
+  GatewayActionResult({
+    required this.success,
+    this.message,
+    this.error,
+    this.payload,
+  });
+
+  final bool success;
+  final String? message;
+  final String? error;
+  final Map<String, dynamic>? payload;
+
+  factory GatewayActionResult.fromResponse(Map<String, dynamic> response) {
+    final normalized = _normalizeResponse(response);
+    return GatewayActionResult(
+      success: normalized.success,
+      message: normalized.message,
+      error: normalized.error,
+      payload: normalized.payload,
     );
   }
 }

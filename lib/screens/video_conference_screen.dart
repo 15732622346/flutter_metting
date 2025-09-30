@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -8,6 +9,7 @@ import 'package:livekit_client/livekit_client.dart' as lk;
 
 import '../models/room_join_data.dart';
 import '../services/livekit_service.dart';
+import '../services/gateway_api_service.dart';
 import '../widgets/video_track_widget.dart';
 
 /// 直播间界面
@@ -39,10 +41,23 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
 
   // LiveKit 会话状态
   final LiveKitService _liveKitService = LiveKitService();
+  final GatewayApiService _gatewayApiService = GatewayApiService();
+
   StreamSubscription<List<lk.RemoteParticipant>>? _participantsSubscription;
   StreamSubscription<lk.VideoTrack?>? _localVideoTrackSubscription;
   StreamSubscription<lk.ConnectionState>? _connectionStateSubscription;
   StreamSubscription<LiveKitEvent>? _roomEventSubscription;
+
+  bool _isMicrophoneToggleInProgress = false;
+  bool _isApplyingMic = false;
+  bool _hasAudioPublishPermission = false;
+  bool _isLocalMicrophoneEnabled = false;
+  bool _isLocalUserDisabled = false;
+  String _localMicStatus = 'off_mic';
+  String? _localMicStatusOverride;
+  int _requestingMicCount = 0;
+  int? _localUserRole;
+  int? _localUserUid;
 
   List<lk.RemoteParticipant> _remoteParticipants =
       const <lk.RemoteParticipant>[];
@@ -296,9 +311,9 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
         if (!mounted) return;
         setState(() {
           _remoteParticipants = participants;
-          _occupiedMicSeats = participants.length + 1;
         });
         _updateActiveVideoTracks(participants: participants);
+        _refreshParticipantStates();
       });
 
       _localVideoTrackSubscription?.cancel();
@@ -320,11 +335,11 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
       if (mounted) {
         setState(() {
           _remoteParticipants = initialRemotes;
-          _occupiedMicSeats = initialRemotes.length + 1;
         });
       }
 
       _updateActiveVideoTracks(participants: initialRemotes);
+      _refreshParticipantStates();
 
       lk.VideoTrack? initialLocalTrack;
       final localParticipant = _liveKitService.room?.localParticipant;
@@ -349,6 +364,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
         _isRoomConnected = true;
       });
 
+      _refreshParticipantStates();
       unawaited(_liveKitService.enableSpeaker(true));
     } catch (error) {
       if (!mounted) return;
@@ -369,6 +385,10 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
       case LiveKitEventType.trackSubscribed:
       case LiveKitEventType.trackUnsubscribed:
         _updateActiveVideoTracks();
+        _refreshParticipantStates();
+        break;
+      case LiveKitEventType.metadataUpdated:
+        _refreshParticipantStates();
         break;
       case LiveKitEventType.dataReceived:
         _handleIncomingData(event);
@@ -382,6 +402,337 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
         break;
       default:
         break;
+    }
+  }
+
+  void _refreshParticipantStates() {
+    final room = _liveKitService.room;
+    final lk.LocalParticipant? localParticipant = room?.localParticipant;
+    int requestingCount = 0;
+    int onMicCount = 0;
+    bool localMicEnabled = false;
+    bool localDisabled = false;
+    bool canPublishAudio = false;
+    String localStatus = 'off_mic';
+    int? localRole = _localUserRole ?? _session.userRoles;
+    int? localUid = _localUserUid ?? _session.userId;
+
+    if (localParticipant != null) {
+      localMicEnabled = localParticipant.isMicrophoneEnabled();
+      final roleInfo = _participantRoleInfo(localParticipant);
+      localRole = roleInfo.role;
+      localUid = roleInfo.userUid ?? localUid;
+
+      final metadata = _decodeParticipantMetadata(localParticipant.metadata);
+      localDisabled = _extractBool(
+            metadata,
+            [
+              'is_disabled_user',
+              'isDisabledUser',
+              'disabled',
+              'is_forbidden_user'
+            ],
+          ) ==
+          true;
+      localStatus = _resolveLocalMicStatus(
+        metadata,
+        localMicEnabled: localMicEnabled,
+      );
+
+      if (localStatus == 'requesting') {
+        requestingCount += 1;
+      } else if (_isMicSeatStatus(localStatus)) {
+        onMicCount += 1;
+      }
+
+      canPublishAudio = roleInfo.isHostOrAdmin ||
+          localParticipant.permissions.canPublish ||
+          _extractBool(
+                metadata,
+                ['publish_audio', 'can_publish_audio', 'publishAudio'],
+              ) ==
+              true ||
+          _isMicSeatStatus(localStatus);
+    }
+
+    final participants = room?.participants.values ??
+        const Iterable<lk.RemoteParticipant>.empty();
+    for (final participant in participants) {
+      final metadata = _decodeParticipantMetadata(participant.metadata);
+      if (!_shouldDisplayParticipant(metadata)) {
+        continue;
+      }
+      final status = _extractMicStatus(metadata);
+      if (status == 'requesting') {
+        requestingCount += 1;
+      } else if (_isMicSeatStatus(status)) {
+        onMicCount += 1;
+      }
+    }
+
+    final hasLocal = localParticipant != null;
+    final fallbackOccupied = _remoteParticipants.length + (hasLocal ? 1 : 0);
+    final effectiveOccupied = onMicCount > 0 ? onMicCount : fallbackOccupied;
+    final clampedOccupied =
+        math.max(0, math.min(_totalMicSeats, effectiveOccupied));
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _isLocalMicrophoneEnabled = localMicEnabled;
+      _isLocalUserDisabled = localDisabled;
+      _hasAudioPublishPermission = canPublishAudio;
+      _localMicStatus = localStatus;
+      _localUserRole = localRole;
+      _localUserUid = localUid;
+      _requestingMicCount = requestingCount;
+      _occupiedMicSeats = clampedOccupied;
+    });
+  }
+
+  bool _isMicSeatStatus(String status) {
+    switch (status) {
+      case 'on_mic':
+      case 'muted':
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  bool _shouldDisplayParticipant(Map<String, dynamic>? metadata) {
+    final display =
+        _extractString(metadata, ['display_status', 'displayStatus']);
+    if (display == null) {
+      return true;
+    }
+    final normalized = display.toLowerCase();
+    return normalized != 'hidden';
+  }
+
+  String _resolveLocalMicStatus(Map<String, dynamic>? metadata,
+      {required bool localMicEnabled}) {
+    var status = _extractMicStatus(metadata);
+    if (_localMicStatusOverride != null) {
+      if (status == 'off_mic' && _localMicStatusOverride == 'requesting') {
+        status = _localMicStatusOverride!;
+      } else if (status != 'off_mic') {
+        _localMicStatusOverride = null;
+      }
+    }
+    if (status == 'off_mic' && localMicEnabled) {
+      status = 'on_mic';
+    }
+    return status;
+  }
+
+  String _extractMicStatus(Map<String, dynamic>? metadata) {
+    final raw = _extractString(metadata,
+        ['mic_status', 'micStatus', 'mic_state', 'micState', 'mic', 'status']);
+    if (raw == null) {
+      return 'off_mic';
+    }
+    final normalized = raw.trim().toLowerCase();
+    if (normalized.isEmpty) {
+      return 'off_mic';
+    }
+    if (normalized.contains('request')) {
+      return 'requesting';
+    }
+    if (normalized.contains('pending')) {
+      return 'requesting';
+    }
+    if (normalized.contains('mute')) {
+      return 'muted';
+    }
+    if (normalized.contains('on')) {
+      return 'on_mic';
+    }
+    if (normalized.contains('approve')) {
+      return 'on_mic';
+    }
+    return 'off_mic';
+  }
+
+  bool? _extractBool(Map<String, dynamic>? metadata, List<String> keys) {
+    final value = _searchValue(metadata, keys);
+    if (value is bool) {
+      return value;
+    }
+    if (value is num) {
+      return value != 0;
+    }
+    if (value is String) {
+      final normalized = value.trim().toLowerCase();
+      if (normalized.isEmpty) {
+        return null;
+      }
+      if (['true', 'yes', 'y', 'on', 'enabled', '1'].contains(normalized)) {
+        return true;
+      }
+      if (['false', 'no', 'n', 'off', 'disabled', '0'].contains(normalized)) {
+        return false;
+      }
+    }
+    return null;
+  }
+
+  String? _extractString(Map<String, dynamic>? metadata, List<String> keys) {
+    final value = _searchValue(metadata, keys);
+    if (value is String) {
+      final trimmed = value.trim();
+      return trimmed.isEmpty ? null : trimmed;
+    }
+    if (value is num) {
+      return value.toString();
+    }
+    if (value is bool) {
+      return value ? 'true' : 'false';
+    }
+    return null;
+  }
+
+  dynamic _searchValue(dynamic source, List<String> keys, [int depth = 0]) {
+    if (source == null || depth > 4) {
+      return null;
+    }
+    if (source is Map) {
+      for (final key in keys) {
+        if (source.containsKey(key)) {
+          final value = source[key];
+          if (value != null) {
+            return value;
+          }
+        }
+      }
+      for (final value in source.values) {
+        final result = _searchValue(value, keys, depth + 1);
+        if (result != null) {
+          return result;
+        }
+      }
+    } else if (source is Iterable) {
+      for (final item in source) {
+        final result = _searchValue(item, keys, depth + 1);
+        if (result != null) {
+          return result;
+        }
+      }
+    }
+    return null;
+  }
+
+  Future<void> _handleRequestMic() async {
+    if (_isApplyingMic) {
+      return;
+    }
+    final jwt = _session.userJwtToken ?? '';
+    if (jwt.isEmpty) {
+      _showToast('缺少登录凭证，无法申请上麦');
+      return;
+    }
+    final localParticipant = _liveKitService.room?.localParticipant;
+    if (localParticipant == null) {
+      _showToast('尚未加入房间，无法申请上麦');
+      return;
+    }
+    if (_isLocalUserDisabled) {
+      _showToast('您已被禁用，无法申请上麦');
+      return;
+    }
+    if (_localMicStatus == 'requesting') {
+      _showToast('已发送申请，等待主持人处理');
+      return;
+    }
+    if (_isMicSeatStatus(_localMicStatus)) {
+      _showToast('您已在麦位上');
+      return;
+    }
+    final userUid = _localUserUid ?? _session.userId;
+    if (userUid == null) {
+      _showToast('缺少用户标识，无法申请上麦');
+      return;
+    }
+
+    setState(() {
+      _isApplyingMic = true;
+    });
+
+    try {
+      final result = await _gatewayApiService.requestMicrophone(
+        roomId: _session.roomId,
+        userUid: userUid,
+        jwtToken: jwt,
+        participantIdentity: localParticipant.identity,
+        userId: _session.userId,
+        requestTime: DateTime.now(),
+      );
+      if (!result.success) {
+        final message = result.message ?? result.error ?? '申请上麦失败';
+        throw Exception(message);
+      }
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _localMicStatusOverride = 'requesting';
+      });
+      _showToast('申请成功，等待主持人批准');
+      _refreshParticipantStates();
+    } catch (error) {
+      _showToast('申请上麦失败: ' + error.toString());
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isApplyingMic = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _toggleLocalMicrophone() async {
+    if (_isMicrophoneToggleInProgress) {
+      return;
+    }
+    final localParticipant = _liveKitService.room?.localParticipant;
+    if (localParticipant == null) {
+      _showToast('尚未加入房间，无法控制麦克风');
+      return;
+    }
+    if (_isLocalUserDisabled) {
+      _showToast('您已被禁用，无法使用麦克风');
+      return;
+    }
+    if (!_hasAudioPublishPermission) {
+      _showToast('请先申请上麦');
+      return;
+    }
+
+    setState(() {
+      _isMicrophoneToggleInProgress = true;
+    });
+
+    try {
+      final shouldEnable = !localParticipant.isMicrophoneEnabled();
+      await localParticipant.setMicrophoneEnabled(shouldEnable);
+      final effective = localParticipant.isMicrophoneEnabled();
+      if (mounted) {
+        setState(() {
+          _isLocalMicrophoneEnabled = effective;
+        });
+      }
+      _refreshParticipantStates();
+      _showToast(effective ? '已开麦' : '已关麦');
+    } catch (error) {
+      _showToast('切换麦克风失败: ' + error.toString());
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isMicrophoneToggleInProgress = false;
+        });
+      }
     }
   }
 
@@ -894,10 +1245,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
                   ),
                 ],
               ),
-
-            if (!_isVideoMaximized)
-              _buildSmallVideoWindow(),
-
+            if (!_isVideoMaximized) _buildSmallVideoWindow(),
             if (_isVideoMaximized)
               Positioned(
                 top: 0,
@@ -1313,14 +1661,19 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
                 text: TextSpan(
                   style: const TextStyle(fontSize: 14, color: Colors.white),
                   children: [
-                    const TextSpan(text: '麦位数 '),
+                    const TextSpan(text: '麦位 '),
                     TextSpan(
-                      text: '$_totalMicSeats 个, ',
+                      text: '\$_totalMicSeats 个, ',
                       style: const TextStyle(color: Color(0xFFffe200)),
                     ),
-                    const TextSpan(text: '上限 '),
+                    const TextSpan(text: '已在麦 '),
                     TextSpan(
-                      text: '$_occupiedMicSeats 人, ',
+                      text: '\$_occupiedMicSeats 人, ',
+                      style: const TextStyle(color: Color(0xFFffe200)),
+                    ),
+                    const TextSpan(text: '申请中 '),
+                    TextSpan(
+                      text: '\$_requestingMicCount 人, ',
                       style: const TextStyle(color: Color(0xFFffe200)),
                     ),
                     const TextSpan(text: '主持人：'),
@@ -1402,6 +1755,49 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
 
   /// 构建输入容器 - 完全匹配HTML样式
   Widget _buildInputContainer() {
+    final int resolvedRole = _localUserRole ?? _session.userRoles ?? 1;
+    final bool isHostLike = resolvedRole >= 2;
+    final bool micBusy = _isMicrophoneToggleInProgress;
+    final bool micDisabled =
+        micBusy || _isLocalUserDisabled || !_hasAudioPublishPermission;
+    final Color micBackgroundColor = micDisabled
+        ? const Color(0xFFb5b5b5)
+        : (_isLocalMicrophoneEnabled
+            ? const Color(0xFFff7043)
+            : const Color(0xFF4595d5));
+    final String micLabel = micBusy
+        ? '处理中...'
+        : _isLocalMicrophoneEnabled
+            ? '关麦'
+            : '开麦';
+    final VoidCallback? micOnPressed =
+        micDisabled ? null : _toggleLocalMicrophone;
+
+    final bool showApplyButton = !isHostLike;
+    final bool localRequesting = _localMicStatus == 'requesting';
+    final bool alreadyOnMic = _isMicSeatStatus(_localMicStatus);
+    final bool applyBusy = _isApplyingMic;
+    final bool applyDisabled = !showApplyButton ||
+        applyBusy ||
+        localRequesting ||
+        alreadyOnMic ||
+        _isLocalUserDisabled;
+    final String applyLabel = !showApplyButton
+        ? '申请上麦'
+        : applyBusy
+            ? '申请中...'
+            : _isLocalUserDisabled
+                ? '已禁用'
+                : localRequesting
+                    ? '等待审批'
+                    : alreadyOnMic
+                        ? '已在麦位'
+                        : '申请上麦';
+    final Color applyBackgroundColor =
+        applyDisabled ? const Color(0xFFb5b5b5) : const Color(0xFF4595d5);
+    final VoidCallback? applyOnPressed =
+        (!applyDisabled && showApplyButton) ? _handleRequestMic : null;
+
     return Container(
       padding: const EdgeInsets.all(15),
       decoration: const BoxDecoration(
@@ -1411,17 +1807,16 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
         ),
       ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center, // 使用center对齐
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // 输入框容器
           Expanded(
             child: SizedBox(
-              height: 40, // 设置固定高度40px，与按钮匹配
+              height: 40,
               child: TextField(
                 controller: _messageController,
                 focusNode: _inputFocusNode,
                 style: const TextStyle(
-                  color: Color(0xFF333333), // #333 文字颜色
+                  color: Color(0xFF333333),
                   fontSize: 14,
                 ),
                 decoration: InputDecoration(
@@ -1432,12 +1827,11 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
                   ),
                   filled: true,
                   fillColor: Colors.white,
-                  contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 15, vertical: 8), // 调整内边距
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(4), // 4px圆角
-                    borderSide:
-                        const BorderSide(color: Color(0xFFdddddd)), // #ddd
+                    borderRadius: BorderRadius.circular(4),
+                    borderSide: const BorderSide(color: Color(0xFFdddddd)),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(4),
@@ -1446,7 +1840,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(4),
                     borderSide: const BorderSide(
-                      color: Color(0xFF388e3c), // 聚焦时绿色边框
+                      color: Color(0xFF388e3c),
                       width: 2,
                     ),
                   ),
@@ -1455,23 +1849,19 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
               ),
             ),
           ),
-
-          const SizedBox(width: 10), // 匹配HTML的gap: 10px
-
-          // 按钮工具栏
+          const SizedBox(width: 10),
           Row(
             children: [
               if (_isInputFocused) ...[
-                // 发送按钮 - 聚焦时显示
                 SizedBox(
-                  height: 40, // 与输入框高度完全一致
+                  height: 40,
                   child: GestureDetector(
-                    behavior: HitTestBehavior.opaque, // 确保整个区域都能响应点击
+                    behavior: HitTestBehavior.opaque,
                     onTap: () => _sendMessage(_messageController.text),
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 20),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFff5722), // #ff5722 橙红色
+                        color: const Color(0xFFff5722),
                         borderRadius: BorderRadius.circular(4),
                       ),
                       alignment: Alignment.center,
@@ -1487,41 +1877,45 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
                   ),
                 ),
               ] else ...[
-                // 开麦按钮
                 SizedBox(
-                  height: 40, // 与输入框高度完全一致
+                  height: 40,
                   child: ElevatedButton(
-                    onPressed: () => _showToast('开麦功能开发中'),
+                    onPressed: micOnPressed,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFb5b5b5), // #b5b5b5 灰色
+                      backgroundColor: micBackgroundColor,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(4),
                       ),
                     ),
-                    child: const Text('开麦', style: TextStyle(fontSize: 14)),
+                    child: Text(
+                      micLabel,
+                      style: const TextStyle(fontSize: 14),
+                    ),
                   ),
                 ),
-
-                const SizedBox(width: 8), // 按钮间距
-
-                // 上麦按钮
-                SizedBox(
-                  height: 40, // 与输入框高度完全一致
-                  child: ElevatedButton(
-                    onPressed: () => _showToast('上麦功能开发中'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF4595d5), // #4595d5 蓝色
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(4),
+                if (showApplyButton) ...[
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    height: 40,
+                    child: ElevatedButton(
+                      onPressed: applyOnPressed,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: applyBackgroundColor,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      child: Text(
+                        applyLabel,
+                        style: const TextStyle(fontSize: 14),
                       ),
                     ),
-                    child: const Text('上麦', style: TextStyle(fontSize: 14)),
                   ),
-                ),
+                ],
               ],
             ],
           ),

@@ -502,6 +502,7 @@ class _MeetListPageState extends State<MeetListPage>
           loginState['userData'] as Map<String, dynamic>?;
 
       GatewayRoomDetailResult detailResult;
+      String? effectiveJwtToken;
 
       if (isLoggedIn && storedUserData != null) {
         final storedUsername = loginState['username'] as String? ?? '';
@@ -545,6 +546,7 @@ class _MeetListPageState extends State<MeetListPage>
           userJwtToken: jwtToken,
           wssUrl: wsUrl,
         );
+        effectiveJwtToken = jwtToken;
       } else {
         final authStatus = await _gatewayService.getAuthStatus();
         if (!authStatus.success) {
@@ -568,6 +570,7 @@ class _MeetListPageState extends State<MeetListPage>
           userJwtToken: guestToken,
           wssUrl: authStatus.wsUrl,
         );
+        effectiveJwtToken = guestToken;
       }
 
       if (!detailResult.success || !detailResult.hasLiveKitToken) {
@@ -596,6 +599,7 @@ class _MeetListPageState extends State<MeetListPage>
         userInfo: detailResult.user,
         userRoles: detailResult.userRoles,
         userId: detailResult.userId,
+        userJwtToken: effectiveJwtToken,
       );
 
       if (joinData.liveKitToken.isEmpty) {

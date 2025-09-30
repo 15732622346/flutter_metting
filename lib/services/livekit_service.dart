@@ -104,6 +104,14 @@ class LiveKitService {
           ),
         );
       })
+      ..on<lk.ParticipantMetadataUpdatedEvent>((event) {
+        _eventController.add(
+          LiveKitEvent(
+            type: LiveKitEventType.metadataUpdated,
+            data: {'participant': event.participant},
+          ),
+        );
+      })
       ..on<lk.TrackPublishedEvent>((event) {
         _eventController.add(
           LiveKitEvent(
@@ -185,8 +193,8 @@ class LiveKitService {
   }
 
   void _emitParticipantsUpdate() {
-    final current = _room?.participants.values.toList() ?? 
-        <lk.RemoteParticipant>[];
+    final current =
+        _room?.participants.values.toList() ?? <lk.RemoteParticipant>[];
     _participantsController.add(current);
   }
 
@@ -289,6 +297,7 @@ enum LiveKitEventType {
   roomUpdate,
   participantConnected,
   participantDisconnected,
+  metadataUpdated,
   trackPublished,
   trackUnpublished,
   trackSubscribed,

@@ -10,6 +10,7 @@ class RoomJoinData {
     this.userInfo,
     this.userRoles,
     this.userId,
+    this.userJwtToken,
   });
 
   final String roomId;
@@ -22,6 +23,7 @@ class RoomJoinData {
   final Map<String, dynamic>? userInfo;
   final int? userRoles;
   final int? userId;
+  final String? userJwtToken;
 
   RoomJoinData copyWith({
     String? roomId,
@@ -34,6 +36,7 @@ class RoomJoinData {
     Map<String, dynamic>? userInfo,
     int? userRoles,
     int? userId,
+    String? userJwtToken,
   }) {
     return RoomJoinData(
       roomId: roomId ?? this.roomId,
@@ -46,6 +49,7 @@ class RoomJoinData {
       userInfo: userInfo ?? this.userInfo,
       userRoles: userRoles ?? this.userRoles,
       userId: userId ?? this.userId,
+      userJwtToken: userJwtToken ?? this.userJwtToken,
     );
   }
 }
