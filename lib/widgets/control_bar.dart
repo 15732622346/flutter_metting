@@ -68,6 +68,7 @@ class ControlBar extends StatelessWidget {
             canInteract: true,
             onPressed: onSpeakerToggle,
             tooltip: isSpeakerEnabled ? '关闭扬声器' : '开启扬声器',
+            badge: isSpeakerEnabled ? '开' : '关',
           ),
           
           // 切换摄像头

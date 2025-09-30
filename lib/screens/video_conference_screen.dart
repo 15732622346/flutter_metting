@@ -57,6 +57,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
   bool _isApplyingMic = false;
   bool _hasAudioPublishPermission = false;
   bool _isLocalMicrophoneEnabled = false;
+  bool _isSpeakerEnabled = true;
   bool _isLocalUserDisabled = false;
   String _localMicStatus = 'off_mic';
   String? _localMicStatusOverride;
@@ -107,6 +108,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
   void initState() {
     super.initState();
     _session = widget.joinData;
+    _isSpeakerEnabled = _liveKitService.isSpeakerEnabled;
     _initializeData();
     _connectToLiveKit();
 
@@ -403,6 +405,11 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
 
       _refreshParticipantStates();
       unawaited(_liveKitService.enableSpeaker(true));
+      if (mounted) {
+        setState(() {
+          _isSpeakerEnabled = true;
+        });
+      }
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -435,6 +442,36 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
           setState(() {
             _connectionError = event.data['reason']?.toString() ?? '房间连接已断开';
           });
+        }
+        break;
+      case LiveKitEventType.speakerToggled:
+        final enabled = event.data['enabled'] as bool? ?? _liveKitService.isSpeakerEnabled;
+        if (mounted && _isSpeakerEnabled != enabled) {
+          setState(() {
+            _isSpeakerEnabled = enabled;
+          });
+        }
+
+        final bool? roomSuccess = event.data['roomSuccess'] as bool?;
+        final bool hardwareAttempted = event.data['hardwareAttempted'] as bool? ?? false;
+        final bool? hardwareSuccess = event.data['hardwareSuccess'] as bool?;
+        final bool nativeAttempted = event.data['nativeAttempted'] as bool? ?? false;
+        final bool? nativeSuccess = event.data['nativeSuccess'] as bool?;
+
+        final statusSegments = <String>[];
+        if (roomSuccess != null) {
+          statusSegments.add(roomSuccess ? 'LiveKit接口成功' : 'LiveKit接口失败');
+        }
+        if (hardwareAttempted) {
+          statusSegments.add((hardwareSuccess ?? false) ? '硬件切换成功' : '硬件切换失败');
+        }
+        if (nativeAttempted) {
+          statusSegments.add((nativeSuccess ?? false) ? '系统通道成功' : '系统通道失败');
+        }
+
+        if (statusSegments.isNotEmpty && mounted) {
+          final actionLabel = enabled ? '开启' : '关闭';
+          _showToast('扬声器已$actionLabel（${statusSegments.join('，')}）');
         }
         break;
       default:
@@ -1435,19 +1472,56 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
       child: content,
     );
 
-    if (isFullscreen) {
-      return video;
-    }
+    final overlayChildren = <Widget>[
+      Positioned.fill(child: video),
+      Positioned(
+        left: 8,
+        top: 8,
+        child: _buildSpeakerStatusChip(),
+      ),
+    ];
 
-    return Stack(
-      children: [
-        Positioned.fill(child: video),
+    if (!isFullscreen) {
+      overlayChildren.add(
         Positioned(
           right: 5,
           bottom: 5,
           child: _buildFullscreenButton(),
         ),
-      ],
+      );
+    }
+
+    return Stack(children: overlayChildren);
+  }
+
+  Widget _buildSpeakerStatusChip() {
+    final isEnabled = _isSpeakerEnabled;
+    final Color backgroundColor =
+        (isEnabled ? Colors.green : Colors.grey[600]!).withOpacity(0.85);
+    final IconData icon = isEnabled ? Icons.volume_up : Icons.volume_off;
+    final String label = isEnabled ? '扬声器：开' : '扬声器：关';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: Colors.white, size: 16),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
