@@ -17,7 +17,6 @@ void main() async {
   // 强制设置应用只支持竖屏模式
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
-    DeviceOrientation.portraitDown,
   ]);
 
   // 禁用 Flutter Web 调试工具栏
