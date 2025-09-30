@@ -31,7 +31,24 @@ class UserManager {
       });
 
       if (sanitized.isNotEmpty) {
-        await prefs.setString(_userDataKey, jsonEncode(sanitized));
+        const sensitiveKeys = {
+          'jwttoken',
+          'jwt_token',
+          'accesstoken',
+          'access_token',
+          'refreshtoken',
+          'refresh_token',
+          'tokens',
+        };
+        sanitized.removeWhere((key, value) {
+          final lowerKey = key.toString().toLowerCase();
+          return sensitiveKeys.contains(lowerKey);
+        });
+        if (sanitized.isNotEmpty) {
+          await prefs.setString(_userDataKey, jsonEncode(sanitized));
+        } else {
+          await prefs.remove(_userDataKey);
+        }
       } else {
         await prefs.remove(_userDataKey);
       }

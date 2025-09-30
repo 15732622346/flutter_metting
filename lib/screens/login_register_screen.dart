@@ -1,7 +1,10 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 
 import '../core/user_manager.dart';
 import '../services/gateway_api_service.dart';
+import '../providers/auth_provider.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 // 登录注册页面
 class LoginRegisterPage extends StatefulWidget {
@@ -26,6 +29,9 @@ class _LoginRegisterPageState extends State<LoginRegisterPage> {
   final TextEditingController _confirmPasswordController =
       TextEditingController();
   final GatewayApiService _gatewayService = GatewayApiService();
+  final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
+  static const String _secureAuthKey = AuthProvider.secureAuthKey;
+
   bool _isCameraEnabled = false;
   bool _isMicrophoneEnabled = true;
   late bool _isRegisterMode;
@@ -183,8 +189,17 @@ class _LoginRegisterPageState extends State<LoginRegisterPage> {
 
     await UserManager.saveLoginState(
       username: resolvedUsername,
-      extraData: loginResult.toStorageJson(),
+      extraData: loginResult.toPublicJson(),
     );
+
+    try {
+      await _secureStorage.write(
+        key: _secureAuthKey,
+        value: jsonEncode(loginResult.toSecureJson()),
+      );
+    } catch (error) {
+      debugPrint('Failed to persist secure auth data: ' + error.toString());
+    }
 
     if (showSuccessMessage) {
       messenger.showSnackBar(

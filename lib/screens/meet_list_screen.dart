@@ -1,11 +1,13 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../core/user_manager.dart';
 import '../models/room_model.dart';
 import '../services/room_list_service.dart';
 import '../models/room_join_data.dart';
 import '../services/gateway_api_service.dart';
+import '../providers/auth_provider.dart';
 import 'video_conference_screen.dart';
 import 'simple_profile_screen.dart';
 import 'login_register_screen.dart';
@@ -40,6 +42,10 @@ class _MeetListPageState extends State<MeetListPage>
   String _selectedRoomId = '';
   bool _isMeetingCardClickable = true; // 防抖标志
   bool _isInviteSubmitting = false;
+
+  final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
+
+  static const String _secureAuthKey = AuthProvider.secureAuthKey;
 
   // 用户登录状态
   bool _isLoggedIn = false;
@@ -251,7 +257,21 @@ class _MeetListPageState extends State<MeetListPage>
     Map<String, dynamic> stored,
     String fallbackUsername,
   ) async {
-    final currentToken = _resolveJwtToken(stored);
+    String currentToken = _resolveJwtToken(stored);
+    if (currentToken.isEmpty) {
+      final fallbackSecure = await _secureStorage.read(key: _secureAuthKey);
+      if (fallbackSecure != null && fallbackSecure.isNotEmpty) {
+        try {
+          final decoded = jsonDecode(fallbackSecure);
+          if (decoded is Map<String, dynamic>) {
+            stored.addAll(Map<String, dynamic>.from(decoded));
+            currentToken = _resolveJwtToken(stored);
+          }
+        } catch (_) {
+          // ignore malformed secure payload
+        }
+      }
+    }
     if (currentToken.isEmpty) {
       return currentToken;
     }
@@ -325,6 +345,15 @@ class _MeetListPageState extends State<MeetListPage>
           username: usernameToPersist,
           extraData: stored,
         );
+      }
+
+      try {
+        await _secureStorage.write(
+          key: _secureAuthKey,
+          value: jsonEncode(stored),
+        );
+      } catch (_) {
+        // ignore secure storage write failures
       }
 
       return newToken;
@@ -501,13 +530,34 @@ class _MeetListPageState extends State<MeetListPage>
       final Map<String, dynamic>? storedUserData =
           loginState['userData'] as Map<String, dynamic>?;
 
+      final Map<String, dynamic> combinedUserData = {};
+      if (storedUserData != null) {
+        combinedUserData.addAll(storedUserData);
+      }
+      final rawSecureAuth = await _secureStorage.read(key: _secureAuthKey);
+      if (rawSecureAuth != null && rawSecureAuth.isNotEmpty) {
+        try {
+          final decodedAuth = jsonDecode(rawSecureAuth);
+          if (decodedAuth is Map<String, dynamic>) {
+            combinedUserData.addAll(decodedAuth);
+          } else {
+            debugPrint('Secure auth payload is not a Map: ' + decodedAuth.runtimeType.toString());
+          }
+        } catch (error) {
+          debugPrint('Failed to decode secure auth payload: ' + error.toString());
+        }
+      } else {
+        debugPrint('No secure auth payload found');
+      }
+      debugPrint('Combined auth keys: ' + combinedUserData.keys.join(', '));
+
       GatewayRoomDetailResult detailResult;
       String? effectiveJwtToken;
 
-      if (isLoggedIn && storedUserData != null) {
+      if (isLoggedIn && combinedUserData.isNotEmpty) {
         final storedUsername = loginState['username'] as String? ?? '';
         final userName = _coalesceStrings(
-              storedUserData,
+              combinedUserData,
               const ['userName', 'user_name', 'username'],
             ) ??
             storedUsername;
@@ -515,7 +565,7 @@ class _MeetListPageState extends State<MeetListPage>
         String jwtToken;
         try {
           jwtToken = await _ensureValidJwtToken(
-            storedUserData,
+            combinedUserData,
             userName.isNotEmpty ? userName : storedUsername,
           );
         } catch (error) {
@@ -531,7 +581,7 @@ class _MeetListPageState extends State<MeetListPage>
         }
 
         final wsUrl = _coalesceStrings(
-          storedUserData,
+          combinedUserData,
           const ['wsUrl', 'ws_url'],
         );
 

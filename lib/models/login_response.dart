@@ -48,6 +48,17 @@ class LoginResponse {
     'message': message,
     'error': error,
   };
+  Map<String, dynamic> toPublicJson() => {
+        'success': success,
+        'ws_url': wsUrl,
+        'room_name': roomName,
+        'user_roles': userRoles,
+        'id': id,
+        'user_id': userId,
+        'nickname': nickname,
+        'message': message,
+      }..removeWhere((key, value) => value == null);
+
   
   /// 获取有效的用户ID
   int? get validUserId => id ?? userId;

@@ -28,6 +28,7 @@ dependencies:
 
   # 本地存储
   shared_preferences: ^2.2.2
+  flutter_secure_storage: ^9.1.1
 
   # 摄像头控制
   camera: ^0.10.5+5
@@ -57,3 +58,4 @@ flutter:
   assets:
     - assets/images/
     - assets/icons/
+

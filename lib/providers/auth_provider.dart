@@ -11,9 +11,9 @@ import '../models/user_model.dart';
 import '../services/gateway_api_service.dart';
 
 class AuthProvider extends ChangeNotifier {
-  static const String _secureUserKey = 'current_user';
-  static const String _secureAuthKey = 'gateway_auth';
-  static const String _secureCredentialsKey = 'user_credentials';
+  static const String secureUserKey = 'current_user';
+  static const String secureAuthKey = 'gateway_auth';
+  static const String secureCredentialsKey = 'user_credentials';
 
   final GatewayApiService _gatewayService = GatewayApiService();
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
@@ -195,15 +195,11 @@ class AuthProvider extends ChangeNotifier {
       final storedUserData = loginState['userData'] as Map<String, dynamic>?;
 
       GatewayAuthResult? restoredAuth;
-      if (storedUserData != null && storedUserData.isNotEmpty) {
-        restoredAuth = _restoreAuthResult(storedUserData);
-      } else {
-        final rawAuth = await _secureStorage.read(key: _secureAuthKey);
-        if (rawAuth != null && rawAuth.isNotEmpty) {
-          final decoded = jsonDecode(rawAuth);
-          if (decoded is Map<String, dynamic>) {
-            restoredAuth = _restoreAuthResult(decoded);
-          }
+      final rawAuth = await _secureStorage.read(key: secureAuthKey);
+      if (rawAuth != null && rawAuth.isNotEmpty) {
+        final decoded = jsonDecode(rawAuth);
+        if (decoded is Map<String, dynamic>) {
+          restoredAuth = _restoreAuthResult(decoded);
         }
       }
 
@@ -223,7 +219,20 @@ class AuthProvider extends ChangeNotifier {
         return;
       }
 
-      final rawUserJson = await _secureStorage.read(key: _secureUserKey);
+      if (storedUserData != null && storedUserData.isNotEmpty) {
+        final fallbackAuth = _restoreAuthResult(storedUserData);
+        final fallbackUserName = (loginState['username'] as String?)?.trim();
+        if (fallbackAuth != null) {
+          final resolvedUserName = fallbackUserName?.isNotEmpty == true
+              ? fallbackUserName!
+              : (fallbackAuth.userName?.trim().isNotEmpty == true
+                  ? fallbackAuth.userName!.trim()
+                  : 'user');
+          _currentUser = _buildUserFromAuth(resolvedUserName, fallbackAuth);
+        }
+      }
+
+      final rawUserJson = await _secureStorage.read(key: secureUserKey);
       if (rawUserJson != null && rawUserJson.isNotEmpty) {
         final decoded = jsonDecode(rawUserJson);
         if (decoded is Map<String, dynamic>) {
@@ -428,9 +437,9 @@ class AuthProvider extends ChangeNotifier {
     _cancelScheduledRefresh();
     _refreshInFlight = null;
     try {
-      await _secureStorage.delete(key: _secureUserKey);
-      await _secureStorage.delete(key: _secureAuthKey);
-      await _secureStorage.delete(key: _secureCredentialsKey);
+      await _secureStorage.delete(key: secureUserKey);
+      await _secureStorage.delete(key: secureAuthKey);
+      await _secureStorage.delete(key: secureCredentialsKey);
       await UserManager.clearLoginState();
 
       final prefs = await SharedPreferences.getInstance();
@@ -499,7 +508,6 @@ class AuthProvider extends ChangeNotifier {
     try {
       final result = await _gatewayService.refreshAuthToken(
         refreshToken: refreshToken,
-        jwtToken: _effectiveToken(auth),
       );
 
       if (!result.success || !result.hasJwtToken) {
@@ -623,15 +631,15 @@ class AuthProvider extends ChangeNotifier {
     try {
       await UserManager.saveLoginState(
         username: username,
-        extraData: authResult.toStorageJson(),
+        extraData: authResult.toPublicJson(),
       );
       await _secureStorage.write(
-        key: _secureAuthKey,
-        value: jsonEncode(authResult.toStorageJson()),
+        key: secureAuthKey,
+        value: jsonEncode(authResult.toSecureJson()),
       );
       if (_currentUser != null) {
         await _secureStorage.write(
-          key: _secureUserKey,
+          key: secureUserKey,
           value: jsonEncode(_currentUser!.toJson()),
         );
       }
@@ -643,7 +651,7 @@ class AuthProvider extends ChangeNotifier {
   Future<void> _saveCredentials(String username, String password) async {
     try {
       await _secureStorage.write(
-        key: _secureCredentialsKey,
+        key: secureCredentialsKey,
         value: '$username:$password',
       );
     } catch (error) {
@@ -653,7 +661,7 @@ class AuthProvider extends ChangeNotifier {
 
   Future<Map<String, String>?> getSavedCredentials() async {
     try {
-      final credentials = await _secureStorage.read(key: _secureCredentialsKey);
+      final credentials = await _secureStorage.read(key: secureCredentialsKey);
       if (credentials != null) {
         final parts = credentials.split(':');
         if (parts.length == 2) {

@@ -26,6 +26,23 @@ subprojects {
     project.evaluationDependsOn(':app')
 }
 
+subprojects { subproject ->
+    subproject.plugins.withId("com.android.library") {
+        def androidExt = subproject.extensions.getByName("android")
+        if (!androidExt.hasProperty('namespace') || !androidExt.namespace) {
+            def manifestFile = androidExt.sourceSets.main.manifest.srcFile
+            if (manifestFile != null && manifestFile.exists()) {
+                def manifest = new groovy.xml.XmlSlurper().parse(manifestFile)
+                def pkg = manifest.@package.text()
+                if (pkg != null && !pkg.isBlank()) {
+                    androidExt.namespace = pkg
+                }
+            }
+        }
+    }
+}
+
 tasks.register("clean", Delete) {
     delete rootProject.buildDir
 }
+

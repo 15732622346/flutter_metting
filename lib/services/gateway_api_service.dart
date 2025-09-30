@@ -335,7 +335,7 @@ class GatewayAuthResult {
 
   bool get hasJwtToken => (jwtToken ?? accessToken)?.isNotEmpty ?? false;
 
-  Map<String, dynamic> toStorageJson() {
+  Map<String, dynamic> toSecureJson() {
     final data = <String, dynamic>{
       'userId': userId,
       'userName': userName,
@@ -352,6 +352,19 @@ class GatewayAuthResult {
     };
     data.removeWhere((_, value) => value == null);
     return data;
+  }
+
+  Map<String, dynamic> toPublicJson() {
+    return {
+      'success': success,
+      'message': message,
+      'error': error,
+      'userId': userId,
+      'userName': userName,
+      'userNickname': userNickname,
+      'userRoles': userRoles,
+      'wsUrl': wsUrl,
+    }..removeWhere((key, value) => value == null);
   }
 
   factory GatewayAuthResult.fromResponse(Map<String, dynamic> response) {
