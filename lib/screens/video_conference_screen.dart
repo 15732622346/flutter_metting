@@ -1615,6 +1615,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
         videoTrack: _hostCameraTrack!,
         fit: BoxFit.cover,
         showName: false,
+        showStatusIndicator: false,
       );
     }
 
@@ -1625,6 +1626,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
         fit: BoxFit.cover,
         mirror: true,
         showName: false,
+        showStatusIndicator: false,
       );
     }
 
@@ -1634,6 +1636,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
         videoTrack: _primaryVideoTrack!,
         fit: BoxFit.cover,
         showName: false,
+        showStatusIndicator: false,
       );
     }
 
@@ -1646,6 +1649,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
           videoTrack: cameraTrack,
           fit: BoxFit.cover,
           showName: false,
+          showStatusIndicator: false,
         );
       }
     }
@@ -1658,6 +1662,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
           videoTrack: track,
           fit: BoxFit.cover,
           showName: false,
+          showStatusIndicator: false,
         );
       }
     }
