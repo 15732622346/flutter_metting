@@ -196,41 +196,47 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
 
   Widget _buildOverlayButton({
     required IconData icon,
-    required String label,
+    String? label,
     required VoidCallback onTap,
     Color? backgroundColor,
     Color? foregroundColor,
-    EdgeInsetsGeometry padding = const EdgeInsets.symmetric(
-      horizontal: 12,
-      vertical: 8,
-    ),
+    EdgeInsetsGeometry? padding,
     double borderRadius = 22,
   }) {
-    final Color effectiveBackground =
-        backgroundColor ?? Colors.black.withOpacity(0.6);
+    final bool hasLabel = label != null && label.trim().isNotEmpty;
+    final EdgeInsetsGeometry effectivePadding = padding ??
+        (hasLabel
+            ? const EdgeInsets.symmetric(horizontal: 12, vertical: 8)
+            : EdgeInsets.zero);
+    final Color effectiveBackground = backgroundColor ??
+        (hasLabel ? Colors.black.withOpacity(0.6) : Colors.transparent);
     final Color effectiveForeground = foregroundColor ?? Colors.white;
+    final BorderRadius effectiveRadius =
+        hasLabel ? BorderRadius.circular(borderRadius) : BorderRadius.zero;
 
     return Material(
       color: effectiveBackground,
-      borderRadius: BorderRadius.circular(borderRadius),
+      borderRadius: effectiveRadius,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(borderRadius),
+        borderRadius: effectiveRadius,
         child: Padding(
-          padding: padding,
+          padding: effectivePadding,
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(icon, size: 18, color: effectiveForeground),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: TextStyle(
-                  color: effectiveForeground,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
+              if (hasLabel) ...[
+                const SizedBox(width: 6),
+                Text(
+                  label!,
+                  style: TextStyle(
+                    color: effectiveForeground,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              ),
+              ],
             ],
           ),
         ),
@@ -241,18 +247,22 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
   Widget _buildFullscreenButton() {
     return _buildOverlayButton(
       icon: Icons.fullscreen,
-      label: '最大化',
+      label: null,
       onTap: _handleMaximizeTap,
+      padding: const EdgeInsets.all(1),
+      borderRadius: 0,
+      backgroundColor: Colors.transparent,
     );
   }
 
   Widget _buildFullscreenRestoreButton() {
     return _buildOverlayButton(
       icon: Icons.fullscreen_exit,
-      label: '还原',
+      label: null,
       onTap: _handleRestoreTap,
-      backgroundColor: Colors.white.withOpacity(0.9),
-      foregroundColor: Colors.black87,
+      padding: const EdgeInsets.all(1),
+      borderRadius: 0,
+      backgroundColor: Colors.transparent,
     );
   }
 
@@ -1248,14 +1258,9 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
             if (!_isVideoMaximized) _buildSmallVideoWindow(),
             if (_isVideoMaximized)
               Positioned(
-                top: 0,
-                left: 0,
-                child: SafeArea(
-                  child: Padding(
-                    padding: const EdgeInsets.only(left: 12, top: 12),
-                    child: _buildFullscreenRestoreButton(),
-                  ),
-                ),
+                right: 5,
+                bottom: 5,
+                child: _buildFullscreenRestoreButton(),
               ),
           ],
         ),
@@ -1321,8 +1326,8 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
       children: [
         Positioned.fill(child: video),
         Positioned(
-          right: 16,
-          bottom: 16,
+          right: 5,
+          bottom: 5,
           child: _buildFullscreenButton(),
         ),
       ],
@@ -1439,7 +1444,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
                     ),
                     child: const Center(
                       child: Text(
-                        '收',
+                        '一',
                         style: TextStyle(
                           color: Colors.black,
                           fontSize: 16,
@@ -1778,7 +1783,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
         alreadyOnMic ||
         _isLocalUserDisabled;
     final String applyLabel = !showApplyButton
-        ? '申请上麦'
+        ? '上麦'
         : applyBusy
             ? '申请中...'
             : _isLocalUserDisabled
@@ -1787,7 +1792,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
                     ? '等待审批'
                     : alreadyOnMic
                         ? '已在麦位'
-                        : '申请上麦';
+                        : '上麦';
     final Color applyBackgroundColor =
         applyDisabled ? const Color(0xFFb5b5b5) : const Color(0xFF4595d5);
     final VoidCallback? applyOnPressed =
