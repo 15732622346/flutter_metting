@@ -63,6 +63,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
   int _requestingMicCount = 0;
   int? _localUserRole;
   int? _localUserUid;
+  bool _isGuestUser = false;
 
   List<lk.RemoteParticipant> _remoteParticipants =
       const <lk.RemoteParticipant>[];
@@ -446,6 +447,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
     bool localMicEnabled = false;
     bool localDisabled = false;
     bool canPublishAudio = false;
+    Map<String, dynamic>? localMetadata;
     String localStatus = 'off_mic';
     int? localRole = _localUserRole ?? _session.userRoles;
     int? localUid = _localUserUid ?? _session.userId;
@@ -457,6 +459,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
       localUid = roleInfo.userUid ?? localUid;
 
       final metadata = _decodeParticipantMetadata(localParticipant.metadata);
+      localMetadata = metadata;
       localDisabled = _extractBool(
             metadata,
             [
@@ -513,10 +516,19 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
       return;
     }
 
+    final bool resolvedGuestStatus = _resolveGuestStatus(
+      metadata: localMetadata,
+      userInfo: _session.userInfo,
+      localRole: localRole,
+      sessionRole: _session.userRoles,
+      participantName: _session.participantName,
+    );
+
     setState(() {
       _isLocalMicrophoneEnabled = localMicEnabled;
       _isLocalUserDisabled = localDisabled;
       _hasAudioPublishPermission = canPublishAudio;
+      _isGuestUser = resolvedGuestStatus;
       _localMicStatus = localStatus;
       _localUserRole = localRole;
       _localUserUid = localUid;
@@ -653,6 +665,70 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
           return result;
         }
       }
+    }
+    return null;
+  }
+
+  bool _resolveGuestStatus({
+    Map<String, dynamic>? metadata,
+    Map<String, dynamic>? userInfo,
+    int? localRole,
+    int? sessionRole,
+    String? participantName,
+  }) {
+    final flagFromMetadata = _guestFlagFromMap(metadata);
+    if (flagFromMetadata != null) {
+      return flagFromMetadata;
+    }
+    final flagFromUserInfo = _guestFlagFromMap(userInfo);
+    if (flagFromUserInfo != null) {
+      return flagFromUserInfo;
+    }
+    if (localRole != null) {
+      if (localRole <= 0) {
+        return true;
+      }
+      if (localRole >= 1) {
+        return false;
+      }
+    }
+    if (sessionRole != null && sessionRole <= 0) {
+      return true;
+    }
+    if (participantName != null) {
+      final normalized = participantName.trim().toLowerCase();
+      if (normalized.startsWith('guest') || participantName.contains('游客') || participantName.contains('访客')) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool? _guestFlagFromMap(Map<String, dynamic>? source) {
+    if (source == null) {
+      return null;
+    }
+    final typeValue = _extractString(source, const ['user_type', 'userType', 'type', 'membership', 'membership_type']);
+    if (typeValue != null && typeValue.trim().isNotEmpty) {
+      final lower = typeValue.toLowerCase();
+      if (lower.contains('guest') || lower.contains('visitor') || typeValue.contains('游客') || typeValue.contains('访客')) {
+        return true;
+      }
+      if (lower.contains('member') || lower.contains('user')) {
+        return false;
+      }
+    }
+    final bool? isGuestFlag = _extractBool(source, const ['is_guest', 'isGuest']);
+    if (isGuestFlag != null) {
+      return isGuestFlag;
+    }
+    final dynamic roleValue = _searchValue(
+      source,
+      const ['user_roles', 'userRoles', 'role', 'role_id', 'roleId'],
+    );
+    final int? parsedRole = _tryParseInt(roleValue);
+    if (parsedRole != null) {
+      return parsedRole <= 0;
     }
     return null;
   }
@@ -1189,6 +1265,12 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
       _moderator = hostName.trim();
     }
 
+    _isGuestUser = _resolveGuestStatus(
+      userInfo: _session.userInfo,
+      sessionRole: _session.userRoles,
+      participantName: _session.participantName,
+    );
+
     final hostIdCandidates = [
       roomInfo['host_user_id'],
       roomInfo['hostUserId'],
@@ -1705,11 +1787,6 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
                       text: _moderator,
                       style: const TextStyle(color: Color(0xFFffe200)),
                     ),
-                    const TextSpan(text: '主持人：'),
-                    TextSpan(
-                      text: _moderator,
-                      style: const TextStyle(color: Color(0xFFffe200)),
-                    ),
                   ],
                 ),
                 overflow: TextOverflow.ellipsis,
@@ -1786,9 +1863,12 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
   Widget _buildInputContainer() {
     final int resolvedRole = _localUserRole ?? _session.userRoles ?? 1;
     final bool isHostLike = resolvedRole >= 2;
+    final bool isGuestUser = _isGuestUser || resolvedRole <= 0;
+
     final bool micBusy = _isMicrophoneToggleInProgress;
     final bool micDisabled =
         micBusy || _isLocalUserDisabled || !_hasAudioPublishPermission;
+    final bool micGuestRestricted = isGuestUser;
     final Color micBackgroundColor = micDisabled
         ? const Color(0xFFb5b5b5)
         : (_isLocalMicrophoneEnabled
@@ -1799,13 +1879,15 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
         : _isLocalMicrophoneEnabled
             ? '关麦'
             : '开麦';
-    final VoidCallback? micOnPressed =
-        micDisabled ? null : _toggleLocalMicrophone;
+    final VoidCallback? micOnPressed = micGuestRestricted
+        ? null
+        : (micDisabled ? null : _toggleLocalMicrophone);
 
     final bool showApplyButton = !isHostLike;
     final bool localRequesting = _localMicStatus == 'requesting';
     final bool alreadyOnMic = _isMicSeatStatus(_localMicStatus);
     final bool applyBusy = _isApplyingMic;
+    final bool applyGuestRestricted = isGuestUser;
     final bool applyDisabled = !showApplyButton ||
         applyBusy ||
         localRequesting ||
@@ -1824,8 +1906,9 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
                         : '上麦';
     final Color applyBackgroundColor =
         applyDisabled ? const Color(0xFFb5b5b5) : const Color(0xFF4595d5);
-    final VoidCallback? applyOnPressed =
-        (!applyDisabled && showApplyButton) ? _handleRequestMic : null;
+    final VoidCallback? applyOnPressed = (!applyDisabled && !applyGuestRestricted && showApplyButton)
+        ? _handleRequestMic
+        : null;
 
     return Container(
       padding: const EdgeInsets.all(15),
@@ -1906,32 +1989,19 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
                   ),
                 ),
               ] else ...[
-                SizedBox(
-                  height: 40,
-                  child: ElevatedButton(
-                    onPressed: micOnPressed,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: micBackgroundColor,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                    ),
-                    child: Text(
-                      micLabel,
-                      style: const TextStyle(fontSize: 14),
-                    ),
-                  ),
-                ),
-                if (showApplyButton) ...[
-                  const SizedBox(width: 8),
+                if (micGuestRestricted)
+                  _buildGuestRestrictedButton(
+                    label: micLabel,
+                    featureName: '麦克风',
+                    minWidth: 96,
+                  )
+                else
                   SizedBox(
                     height: 40,
                     child: ElevatedButton(
-                      onPressed: applyOnPressed,
+                      onPressed: micOnPressed,
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: applyBackgroundColor,
+                        backgroundColor: micBackgroundColor,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                         shape: RoundedRectangleBorder(
@@ -1939,11 +2009,38 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
                         ),
                       ),
                       child: Text(
-                        applyLabel,
+                        micLabel,
                         style: const TextStyle(fontSize: 14),
                       ),
                     ),
                   ),
+                if (showApplyButton) ...[
+                  const SizedBox(width: 8),
+                  if (applyGuestRestricted)
+                    _buildGuestRestrictedButton(
+                      label: applyLabel,
+                      featureName: '申请上麦',
+                      minWidth: 110,
+                    )
+                  else
+                    SizedBox(
+                      height: 40,
+                      child: ElevatedButton(
+                        onPressed: applyOnPressed,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: applyBackgroundColor,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                        child: Text(
+                          applyLabel,
+                          style: const TextStyle(fontSize: 14),
+                        ),
+                      ),
+                    ),
                 ],
               ],
             ],
@@ -1954,6 +2051,102 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
   }
 
   /// 发送消息 - 简化版，依赖Flutter自动适配
+
+  Widget _buildGuestRestrictedButton({
+    required String label,
+    required String featureName,
+    double minWidth = 96,
+  }) {
+    return SizedBox(
+      height: 40,
+      child: GestureDetector(
+        onTap: () => _showGuestRestrictionPrompt(featureName),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Container(
+              constraints: BoxConstraints(minWidth: minWidth),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF777777), Color(0xFF555555)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                label,
+                style: const TextStyle(
+                  color: Color(0xFFFFA500),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            Positioned.fill(
+              child: IgnorePointer(
+                child: CustomPaint(
+                  painter: _DashedBorderPainter(
+                    color: const Color(0xFFFFA500),
+                    radius: 6,
+                    strokeWidth: 2,
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              top: -8,
+              right: -8,
+              child: Container(
+                width: 20,
+                height: 20,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFA500),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFF333333), width: 2),
+                ),
+                child: const Center(
+                  child: Text(
+                    '客',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showGuestRestrictionPrompt(String featureName) {
+    if (!mounted) {
+      return;
+    }
+
+    showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('游客模式限制'),
+          content: Text('游客暂不能使用' + featureName + '功能，请登录后再试。'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('知道了'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Future<void> _sendMessage(String message) async {
     final text = message.trim();
     if (text.isEmpty || _isSending) {
@@ -2031,4 +2224,55 @@ class ChatMessage {
     required this.isSystem,
     this.isOwn = false,
   }) : timestamp = DateTime.now();
+}
+
+class _DashedBorderPainter extends CustomPainter {
+  const _DashedBorderPainter({
+    required this.color,
+    this.radius = 6,
+    this.dashLength = 6,
+    this.gapLength = 4,
+    this.strokeWidth = 2,
+  });
+
+  final Color color;
+  final double radius;
+  final double dashLength;
+  final double gapLength;
+  final double strokeWidth;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rrect = RRect.fromRectAndRadius(
+      Offset.zero & size,
+      Radius.circular(radius),
+    );
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth;
+    final path = Path()..addRRect(rrect);
+
+    for (final metric in path.computeMetrics()) {
+      double distance = 0;
+      while (distance < metric.length) {
+        final double next = distance + dashLength;
+        final segment = metric.extractPath(
+          distance,
+          math.min(next, metric.length),
+        );
+        canvas.drawPath(segment, paint);
+        distance = next + gapLength;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DashedBorderPainter oldDelegate) {
+    return color != oldDelegate.color ||
+        radius != oldDelegate.radius ||
+        dashLength != oldDelegate.dashLength ||
+        gapLength != oldDelegate.gapLength ||
+        strokeWidth != oldDelegate.strokeWidth;
+  }
 }
