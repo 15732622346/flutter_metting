@@ -34,6 +34,11 @@ class _ParticipantRoleInfo {
   bool get isHostOrAdmin => role >= 2;
 }
 
+enum _VideoMaximizeSource {
+  main,
+  cameraOverlay,
+}
+
 class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _chatScrollController = ScrollController();
@@ -94,6 +99,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
   // 浮动窗口全屏按钮防抖
   bool _isFullscreenButtonClickable = true;
   bool _isVideoMaximized = false;
+  _VideoMaximizeSource _videoMaximizeSource = _VideoMaximizeSource.main;
   late RoomJoinData _session;
 
   @override
@@ -167,8 +173,11 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
     await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   }
 
-  Future<void> _setVideoMaximized(bool enable) async {
-    if (_isVideoMaximized == enable) {
+  Future<void> _setVideoMaximized(
+    bool enable, {
+    _VideoMaximizeSource source = _VideoMaximizeSource.main,
+  }) async {
+    if (_isVideoMaximized == enable && (!enable || _videoMaximizeSource == source)) {
       return;
     }
 
@@ -181,13 +190,27 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
     setState(() {
       _isVideoMaximized = enable;
       if (enable) {
+        _videoMaximizeSource = source;
         _isSmallVideoMinimized = false;
+      } else {
+        _videoMaximizeSource = _VideoMaximizeSource.main;
       }
     });
   }
 
   void _handleMaximizeTap() {
     unawaited(_setVideoMaximized(true));
+  }
+
+  void _handleSmallWindowMaximizeTap() {
+    _debounceFullscreenButton(() {
+      unawaited(
+        _setVideoMaximized(
+          true,
+          source: _VideoMaximizeSource.cameraOverlay,
+        ),
+      );
+    });
   }
 
   void _handleRestoreTap() {
@@ -1270,6 +1293,14 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
 
   /// 构建视频播放区域
   Widget _buildVideoArea({bool isFullscreen = false}) {
+    if (isFullscreen &&
+        _videoMaximizeSource == _VideoMaximizeSource.cameraOverlay) {
+      return Container(
+        color: Colors.black,
+        child: _buildSmallVideoContent(),
+      );
+    }
+
     Widget content;
 
     if (_connectionError != null) {
@@ -1459,9 +1490,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
                 bottom: 5,
                 right: 5,
                 child: GestureDetector(
-                  onTap: () => _debounceFullscreenButton(() {
-                    _showToast('小窗全屏功能开发中');
-                  }),
+                  onTap: _handleSmallWindowMaximizeTap,
                   child: Container(
                     width: 28,
                     height: 28,
