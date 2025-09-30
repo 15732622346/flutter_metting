@@ -1671,11 +1671,6 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
                       text: '$_occupiedMicSeats 人, ',
                       style: const TextStyle(color: Color(0xFFffe200)),
                     ),
-                    const TextSpan(text: '申请中 '),
-                    TextSpan(
-                      text: '$_requestingMicCount 人, ',
-                      style: const TextStyle(color: Color(0xFFffe200)),
-                    ),
                     const TextSpan(text: '主持人：'),
                     TextSpan(
                       text: _moderator,
