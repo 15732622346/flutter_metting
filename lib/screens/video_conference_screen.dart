@@ -226,6 +226,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
     Color? foregroundColor,
     EdgeInsetsGeometry? padding,
     double borderRadius = 22,
+    double iconSize = 18,
   }) {
     final bool hasLabel = label != null && label.trim().isNotEmpty;
     final EdgeInsetsGeometry effectivePadding = padding ??
@@ -249,7 +250,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: 18, color: effectiveForeground),
+              Icon(icon, size: iconSize, color: effectiveForeground),
               if (hasLabel) ...[
                 const SizedBox(width: 6),
                 Text(
@@ -273,9 +274,10 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
       icon: Icons.fullscreen,
       label: null,
       onTap: _handleMaximizeTap,
-      padding: const EdgeInsets.all(1),
-      borderRadius: 0,
+      padding: const EdgeInsets.all(6),
+      borderRadius: 12,
       backgroundColor: Colors.transparent,
+      iconSize: 27,
     );
   }
 
@@ -284,9 +286,10 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
       icon: Icons.fullscreen_exit,
       label: null,
       onTap: _handleRestoreTap,
-      padding: const EdgeInsets.all(1),
-      borderRadius: 0,
+      padding: const EdgeInsets.all(6),
+      borderRadius: 12,
       backgroundColor: Colors.transparent,
+      iconSize: 27,
     );
   }
 
@@ -1396,6 +1399,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
         videoTrack: _hostScreenShareTrack!,
         fit: BoxFit.contain,
         showName: false,
+        showStatusIndicator: false,
       );
     } else if (_primaryVideoTrack != null) {
       content = VideoTrackWidget(

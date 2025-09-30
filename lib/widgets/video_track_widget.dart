@@ -12,6 +12,7 @@ class VideoTrackWidget extends StatefulWidget {
     this.mirror = false,
     this.showName = true,
     this.onTap,
+    this.showStatusIndicator = true,
   });
 
   final lk.VideoTrack videoTrack;
@@ -19,6 +20,7 @@ class VideoTrackWidget extends StatefulWidget {
   final String? participantName;
   final bool mirror;
   final bool showName;
+  final bool showStatusIndicator;
   final VoidCallback? onTap;
 
   @override
@@ -66,11 +68,12 @@ class _VideoTrackWidgetState extends State<VideoTrackWidget> {
                 ),
               ),
             ),
-          Positioned(
-            top: 8,
-            right: 8,
-            child: _buildVideoStatusIndicator(),
-          ),
+          if (widget.showStatusIndicator)
+            Positioned(
+              top: 8,
+              right: 8,
+              child: _buildVideoStatusIndicator(),
+            ),
         ],
       ),
     );
@@ -79,15 +82,15 @@ class _VideoTrackWidgetState extends State<VideoTrackWidget> {
   Widget _buildVideoStatusIndicator() {
     final isEnabled = !widget.videoTrack.muted;
     return Container(
-      padding: const EdgeInsets.all(4),
+      padding: const EdgeInsets.all(6),
       decoration: BoxDecoration(
         color: Colors.black.withOpacity(0.6),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(18),
       ),
       child: Icon(
         isEnabled ? Icons.videocam : Icons.videocam_off,
         color: isEnabled ? Colors.green : Colors.red,
-        size: 16,
+        size: 24,
       ),
     );
   }
