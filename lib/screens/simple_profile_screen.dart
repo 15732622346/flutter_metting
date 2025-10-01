@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../core/user_manager.dart';
 import '../services/app_updater.dart';
 import '../services/gateway_api_service.dart';
@@ -22,6 +25,9 @@ class SimpleProfileScreen extends StatefulWidget {
 }
 
 class _SimpleProfileScreenState extends State<SimpleProfileScreen> {
+  static const String _secureAuthStorageKey = 'gateway_auth';
+  final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
+
   final GatewayApiService _gatewayService = GatewayApiService();
   // 防抖标志，防止快速重复点击
   bool _isButtonClickable = true;
@@ -51,6 +57,87 @@ class _SimpleProfileScreenState extends State<SimpleProfileScreen> {
     });
   }
 
+  /// Resolve stored JWT before logout so the request carries credentials.
+  Future<String?> _resolveJwtToken() async {
+    try {
+      final storedData = await UserManager.getStoredUserData();
+      final directToken = _pickTokenFromMap(storedData);
+      if (directToken != null) {
+        return directToken;
+      }
+
+      final rawAuth = await _secureStorage.read(key: _secureAuthStorageKey);
+      if (rawAuth == null || rawAuth.trim().isEmpty) {
+        return null;
+      }
+
+      final decoded = jsonDecode(rawAuth);
+      final decodedMap = _normalizeDynamicMap(decoded);
+      final decodedToken = _pickTokenFromMap(decodedMap);
+      if (decodedToken != null) {
+        return decodedToken;
+      }
+
+      final tokensMap = _normalizeDynamicMap(decodedMap?['tokens']);
+      final tokenFromTokens = _pickTokenFromMap(tokensMap);
+      if (tokenFromTokens != null) {
+        return tokenFromTokens;
+      }
+
+      final payloadMap = _normalizeDynamicMap(decodedMap?['payload']);
+      return _pickTokenFromMap(payloadMap);
+    } catch (error) {
+      debugPrint('Failed to resolve logout token: ${error.toString()}');
+      return null;
+    }
+  }
+
+  Map<String, dynamic>? _normalizeDynamicMap(dynamic value) {
+    if (value is Map<String, dynamic>) {
+      return value;
+    }
+    if (value is Map) {
+      return value.map((key, val) => MapEntry(key.toString(), val));
+    }
+    return null;
+  }
+
+  String? _pickTokenFromMap(Map<String, dynamic>? data) {
+    if (data == null || data.isEmpty) {
+      return null;
+    }
+
+    const keys = [
+      'jwtToken',
+      'jwt_token',
+      'accessToken',
+      'access_token',
+      'token',
+    ];
+
+    for (final key in keys) {
+      final candidate = _asNonEmptyString(data[key]);
+      if (candidate != null) {
+        return candidate;
+      }
+    }
+
+    return null;
+  }
+
+  String? _asNonEmptyString(dynamic value) {
+    if (value is String) {
+      final trimmed = value.trim();
+      return trimmed.isEmpty ? null : trimmed;
+    }
+    if (value is num) {
+      final asString = value.toString();
+      return asString.isEmpty ? null : asString;
+    }
+    return null;
+  }
+
+  /// Debounce helper to prevent repeated taps and toasts.
   /// 防抖函数 - 防止用户快速重复点击和重复显示提示
   void _debounceButtonClick(VoidCallback action) {
     if (!_isButtonClickable || _isToastVisible) return;
@@ -110,10 +197,7 @@ class _SimpleProfileScreenState extends State<SimpleProfileScreen> {
 
     if (shouldLogout == true) {
       try {
-        final storedData = await UserManager.getStoredUserData();
-        final jwtToken = (storedData?['jwtToken'] ??
-            storedData?['jwt_token'] ??
-            storedData?['accessToken']) as String?;
+        final jwtToken = await _resolveJwtToken();
         await _gatewayService.logout(jwtToken: jwtToken);
       } catch (error) {
         // 忽略退出过程中的网络异常
