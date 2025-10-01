@@ -1909,6 +1909,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
     final int resolvedRole = _localUserRole ?? _session.userRoles ?? 1;
     final bool isHostLike = resolvedRole >= 2;
     final bool isGuestUser = _isGuestUser || resolvedRole <= 0;
+    final bool canSendMessage = !isGuestUser && !_isLocalUserDisabled;
 
     final bool micBusy = _isMicrophoneToggleInProgress;
     final bool micDisabled =
@@ -1969,40 +1970,74 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
           Expanded(
             child: SizedBox(
               height: 40,
-              child: TextField(
-                controller: _messageController,
-                focusNode: _inputFocusNode,
-                style: const TextStyle(
-                  color: Color(0xFF333333),
-                  fontSize: 14,
-                ),
-                decoration: InputDecoration(
-                  hintText: '输入消息...',
-                  hintStyle: const TextStyle(
-                    color: Colors.grey,
-                    fontSize: 14,
-                  ),
-                  filled: true,
-                  fillColor: Colors.white,
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(4),
-                    borderSide: const BorderSide(color: Color(0xFFdddddd)),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(4),
-                    borderSide: const BorderSide(color: Color(0xFFdddddd)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(4),
-                    borderSide: const BorderSide(
-                      color: Color(0xFF388e3c),
-                      width: 2,
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: () {
+                  if (!canSendMessage) {
+                    _showGuestRestrictionPrompt('聊天发言');
+                    return;
+                  }
+                },
+                child: AbsorbPointer(
+                  absorbing: !canSendMessage,
+                  child: TextField(
+                    controller: _messageController,
+                    focusNode: canSendMessage ? _inputFocusNode : null,
+                    readOnly: !canSendMessage,
+                    enabled: canSendMessage,
+                    style: TextStyle(
+                      color: canSendMessage
+                          ? const Color(0xFF333333)
+                          : const Color(0xFF999999),
+                      fontSize: 14,
                     ),
+                    decoration: InputDecoration(
+                      hintText: canSendMessage ? '输入消息...' : '游客暂不可发言，请登录',
+                      hintStyle: TextStyle(
+                        color: canSendMessage
+                            ? Colors.grey
+                            : const Color(0xFFB0B0B0),
+                        fontSize: 14,
+                      ),
+                      filled: true,
+                      fillColor: canSendMessage
+                          ? Colors.white
+                          : const Color(0xFFF5F5F5),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 15,
+                        vertical: 8,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(6),
+                        borderSide: BorderSide(
+                          color: canSendMessage
+                              ? const Color(0xFFDDDDDD)
+                              : const Color(0xFFE0E0E0),
+                        ),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(6),
+                        borderSide: BorderSide(
+                          color: canSendMessage
+                              ? const Color(0xFFDDDDDD)
+                              : const Color(0xFFE0E0E0),
+                        ),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(6),
+                        borderSide: const BorderSide(
+                          color: Color(0xFF388E3C),
+                          width: 2,
+                        ),
+                      ),
+                      disabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(6),
+                        borderSide: const BorderSide(color: Color(0xFFE0E0E0)),
+                      ),
+                    ),
+                    onSubmitted: canSendMessage ? _sendMessage : null,
                   ),
                 ),
-                onSubmitted: _sendMessage,
               ),
             ),
           ),
@@ -2104,67 +2139,19 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
   }) {
     return SizedBox(
       height: 40,
-      child: GestureDetector(
-        onTap: () => _showGuestRestrictionPrompt(featureName),
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Container(
-              constraints: BoxConstraints(minWidth: minWidth),
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF777777), Color(0xFF555555)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              alignment: Alignment.center,
-              child: Text(
-                label,
-                style: const TextStyle(
-                  color: Color(0xFFFFA500),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-            Positioned.fill(
-              child: IgnorePointer(
-                child: CustomPaint(
-                  painter: _DashedBorderPainter(
-                    color: const Color(0xFFFFA500),
-                    radius: 6,
-                    strokeWidth: 2,
-                  ),
-                ),
-              ),
-            ),
-            Positioned(
-              top: -8,
-              right: -8,
-              child: Container(
-                width: 20,
-                height: 20,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFFA500),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFF333333), width: 2),
-                ),
-                child: const Center(
-                  child: Text(
-                    '客',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
+      child: ElevatedButton(
+        onPressed: () => _showGuestRestrictionPrompt(featureName),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFF777777),
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(4),
+          ),
+        ),
+        child: Text(
+          label,
+          style: const TextStyle(fontSize: 14),
         ),
       ),
     );
