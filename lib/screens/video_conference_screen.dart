@@ -1147,7 +1147,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
       lk.RemoteParticipant participant, lk.TrackSource source) {
     for (final publication in participant.videoTracks) {
       final track = publication.track;
-      if (track == null || !publication.subscribed) {
+      if (track == null || track.muted || !publication.subscribed) {
         continue;
       }
       if (publication.source == source) {

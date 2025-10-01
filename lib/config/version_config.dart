@@ -9,7 +9,7 @@ class VersionConfig {
   /// 当前版本类型
   /// true: 新版本 (上传到服务器)
   /// false: 旧版本 (安装到手机测试)
-  static const bool IS_NEW_VERSION = false; // 修改这里来切换版本
+  static const bool IS_NEW_VERSION = true; // 修改这里来切换版本
   
   /// 版本显示文本
   static String get versionText => IS_NEW_VERSION ? '🟢 新版本' : '🔵 旧版本';
@@ -27,7 +27,7 @@ class VersionConfig {
     : '基础功能版';
     
   /// 版本号（与pubspec.yaml保持一致）
-  static String get versionNumber => IS_NEW_VERSION ? '2.0.0' : '1.8.0';
+  static String get versionNumber => IS_NEW_VERSION ? '2.1.0' : '1.8.0';
   
   // ==================== 功能开关 ====================
   

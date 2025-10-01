@@ -149,6 +149,30 @@ class LiveKitService {
           ),
         );
       })
+      ..on<lk.TrackMutedEvent>((event) {
+        _eventController.add(
+          LiveKitEvent(
+            type: LiveKitEventType.trackMuted,
+            data: {
+              'participant': event.participant,
+              'publication': event.publication,
+              'track': event.track,
+            },
+          ),
+        );
+      })
+      ..on<lk.TrackUnmutedEvent>((event) {
+        _eventController.add(
+          LiveKitEvent(
+            type: LiveKitEventType.trackUnmuted,
+            data: {
+              'participant': event.participant,
+              'publication': event.publication,
+              'track': event.track,
+            },
+          ),
+        );
+      })
       ..on<lk.TrackUnsubscribedEvent>((event) {
         _eventController.add(
           LiveKitEvent(
@@ -344,6 +368,8 @@ enum LiveKitEventType {
   trackUnpublished,
   trackSubscribed,
   trackUnsubscribed,
+  trackMuted,
+  trackUnmuted,
   dataReceived,
   chatMessage,
   microphoneToggled,
