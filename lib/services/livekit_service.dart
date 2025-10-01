@@ -219,12 +219,10 @@ class LiveKitService {
   Future<void> enableSpeaker(bool enable) async {
     _isSpeakerEnabled = enable;
 
-    bool roomSuccess = false;
     final room = _room;
     if (room != null) {
       try {
         await room.setSpeakerOn(enable);
-        roomSuccess = true;
       } catch (error, stackTrace) {
         if (kDebugMode) {
           debugPrint('Failed to update speaker state via room.setSpeakerOn: $error');
@@ -233,14 +231,10 @@ class LiveKitService {
       }
     }
 
-    bool hardwareAttempted = false;
-    bool hardwareSuccess = false;
     if (lk.lkPlatformIs(lk.PlatformType.android) ||
         lk.lkPlatformIs(lk.PlatformType.iOS)) {
-      hardwareAttempted = true;
       try {
         await lk.Hardware.instance.setSpeakerphoneOn(enable);
-        hardwareSuccess = true;
       } catch (error, stackTrace) {
         if (kDebugMode) {
           debugPrint('Failed to toggle hardware speakerphone: $error');
@@ -249,16 +243,12 @@ class LiveKitService {
       }
     }
 
-    bool nativeAttempted = false;
-    bool nativeSuccess = false;
     if (lk.lkPlatformIs(lk.PlatformType.android)) {
-      nativeAttempted = true;
       try {
-        final bool? result = await _audioChannel.invokeMethod<bool>(
+        await _audioChannel.invokeMethod<bool>(
           'setSpeakerphoneOn',
           {'enable': enable},
         );
-        nativeSuccess = result ?? false;
       } catch (error, stackTrace) {
         if (kDebugMode) {
           debugPrint('Failed to invoke native speakerphone toggle: $error');
@@ -270,14 +260,7 @@ class LiveKitService {
     _eventController.add(
       LiveKitEvent(
         type: LiveKitEventType.speakerToggled,
-        data: {
-          'enabled': enable,
-          'roomSuccess': roomSuccess,
-          'hardwareAttempted': hardwareAttempted,
-          'hardwareSuccess': hardwareAttempted ? hardwareSuccess : null,
-          'nativeAttempted': nativeAttempted,
-          'nativeSuccess': nativeAttempted ? nativeSuccess : null,
-        },
+        data: {'enabled': enable},
       ),
     );
   }

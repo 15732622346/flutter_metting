@@ -220,32 +220,32 @@ class _SimpleProfileScreenState extends State<SimpleProfileScreen> {
               ),
               child: Column(
                 children: [
-                  _buildMenuItem(
-                    context,
-                    icon: Icons.settings,
-                    title: '会议设置',
-                    onTap: () {
-                      _debounceButtonClick(() {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('会议设置功能开发中...')),
-                        );
-                      });
-                    },
-                  ),
-                  _buildDivider(),
-                  _buildMenuItem(
-                    context,
-                    icon: Icons.lock,
-                    title: '修改密码',
-                    onTap: () {
-                      _debounceButtonClick(() {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('修改密码功能开发中...')),
-                        );
-                      });
-                    },
-                  ),
-                  _buildDivider(),
+                  // _buildMenuItem(
+                  //   context,
+                  //   icon: Icons.settings,
+                  //   title: '会议设置',
+                  //   onTap: () {
+                  //     _debounceButtonClick(() {
+                  //       ScaffoldMessenger.of(context).showSnackBar(
+                  //         SnackBar(content: Text('会议设置功能开发中...')),
+                  //       );
+                  //     });
+                  //   },
+                  // ),
+                  // _buildDivider(),
+                  // _buildMenuItem(
+                  //   context,
+                  //   icon: Icons.lock,
+                  //   title: '修改密码',
+                  //   onTap: () {
+                  //     _debounceButtonClick(() {
+                  //       ScaffoldMessenger.of(context).showSnackBar(
+                  //         SnackBar(content: Text('修改密码功能开发中...')),
+                  //       );
+                  //     });
+                  //   },
+                  // ),
+                  // _buildDivider(),
                   _buildMenuItem(
                     context,
                     icon: Icons.system_update,
@@ -265,18 +265,18 @@ class _SimpleProfileScreenState extends State<SimpleProfileScreen> {
                     },
                   ),
                   _buildDivider(),
-                  _buildMenuItem(
-                    context,
-                    icon: Icons.help,
-                    title: '帮助教程',
-                    onTap: () {
-                      _debounceButtonClick(() {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('帮助教程功能开发中...')),
-                        );
-                      });
-                    },
-                  ),
+                  // _buildMenuItem(
+                  //   context,
+                  //   icon: Icons.help,
+                  //   title: '帮助教程',
+                  //   onTap: () {
+                  //     _debounceButtonClick(() {
+                  //       ScaffoldMessenger.of(context).showSnackBar(
+                  //         SnackBar(content: Text('帮助教程功能开发中...')),
+                  //       );
+                  //     });
+                  //   },
+                  // ),
                 ],
               ),
             ),

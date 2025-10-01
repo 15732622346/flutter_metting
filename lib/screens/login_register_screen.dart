@@ -489,45 +489,9 @@ class _LoginRegisterPageState extends State<LoginRegisterPage> {
 
   // 构建设置开关区域
   Widget _buildSettingsSection() {
-    return Column(
-      children: [
-        // 开启摄像头
-        _buildSettingItem(
-          title: '开启摄像头',
-          value: _isCameraEnabled,
-          onChanged: (value) {
-            setState(() {
-              _isCameraEnabled = value;
-            });
-          },
-        ),
-
-        SizedBox(height: 5), // 开启摄像头与分割线之间的间隙
-
-        // 分割线
-        Divider(
-          height: 1,
-          color: Colors.grey[300],
-          thickness: 1,
-        ),
-
-        SizedBox(height: 5), // 分割线与开启麦克风之间的间隙
-
-        // 开启麦克风
-        _buildSettingItem(
-          title: '开启麦克风',
-          value: _isMicrophoneEnabled,
-          onChanged: (value) {
-            setState(() {
-              _isMicrophoneEnabled = value;
-            });
-          },
-        ),
-      ],
-    );
+    return const SizedBox.shrink();
   }
 
-  // 构建单个设置项
   Widget _buildSettingItem({
     required String title,
     required bool value,

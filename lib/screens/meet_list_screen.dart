@@ -512,11 +512,11 @@ class _MeetListPageState extends State<MeetListPage>
     final messenger = ScaffoldMessenger.of(context);
     final code = _inviteCodeController.text.trim();
     if (code.isEmpty) {
-      messenger.showSnackBar(const SnackBar(content: Text('??????')));
+      messenger.showSnackBar(const SnackBar(content: Text('邀请码不能为空')));
       return;
     }
     if (_selectedRoomId.isEmpty) {
-      messenger.showSnackBar(const SnackBar(content: Text('??????????')));
+      messenger.showSnackBar(const SnackBar(content: Text('房间id不能为空')));
       return;
     }
 
@@ -601,7 +601,7 @@ class _MeetListPageState extends State<MeetListPage>
         final authStatus = await _gatewayService.getAuthStatus();
         if (!authStatus.success) {
           final message =
-              authStatus.error ?? authStatus.message ?? '??????????????';
+              authStatus.error ?? authStatus.message ?? '认证失败，请稍后再试';
           throw Exception(message);
         }
 
@@ -610,7 +610,7 @@ class _MeetListPageState extends State<MeetListPage>
             'guest_${DateTime.now().millisecondsSinceEpoch}';
         final guestToken = authStatus.jwtToken ?? '';
         if (guestToken.isEmpty) {
-          throw Exception('????????????');
+          throw Exception('访客身份无效');
         }
 
         detailResult = await _gatewayService.joinRoom(
@@ -625,7 +625,7 @@ class _MeetListPageState extends State<MeetListPage>
 
       if (!detailResult.success || !detailResult.hasLiveKitToken) {
         final message =
-            detailResult.error ?? detailResult.message ?? '???????????';
+            detailResult.error ?? detailResult.message ?? '房间未开放或已结束';
         throw Exception(message);
       }
 
@@ -653,7 +653,7 @@ class _MeetListPageState extends State<MeetListPage>
       );
 
       if (joinData.liveKitToken.isEmpty) {
-        throw Exception('????????????????');
+        throw Exception('认证失败，请稍后再试');
       }
 
       _hideInviteCodePanel();
@@ -775,7 +775,7 @@ class _MeetListPageState extends State<MeetListPage>
           ),
           const SizedBox(height: 12),
           Text(
-            _roomListError ?? '??????',
+            _roomListError ?? '加载会议列表失败',
             textAlign: TextAlign.center,
             style: TextStyle(
               color: Colors.grey[700],
@@ -792,7 +792,7 @@ class _MeetListPageState extends State<MeetListPage>
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
             ),
-            child: const Text('????'),
+            child: const Text('进入'),
           ),
         ],
       ),
@@ -813,7 +813,7 @@ class _MeetListPageState extends State<MeetListPage>
           ),
           const SizedBox(height: 12),
           Text(
-            '???????',
+            '加载会议列表失败',
             style: TextStyle(
               color: Colors.grey[700],
               fontSize: 14,
@@ -824,7 +824,7 @@ class _MeetListPageState extends State<MeetListPage>
             onPressed: () {
               _loadRooms();
             },
-            child: const Text('????'),
+            child: const Text('进入'),
           ),
         ],
       ),
@@ -902,7 +902,7 @@ class _MeetListPageState extends State<MeetListPage>
                           children: [
                             SizedBox(width: 16),
                             if (_isLoggedIn) ...[
-                              // ????? - ??????
+                              // 进入 - 加载会议列表失败
                               Expanded(
                                 child: Text(
                                   '???$_currentUsername',
@@ -914,7 +914,7 @@ class _MeetListPageState extends State<MeetListPage>
                                 ),
                               ),
                             ] else ...[
-                              // ????? - ????????
+                              // 进入 - 加载会议列表失败?
                               ElevatedButton(
                                 onPressed: () {
                                   _toggleUserMenu();
