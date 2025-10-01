@@ -176,6 +176,14 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
     await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   }
 
+  void _dismissKeyboard() {
+    if (_inputFocusNode.hasFocus) {
+      _inputFocusNode.unfocus();
+    } else {
+      FocusScope.of(context).unfocus();
+    }
+  }
+
   Future<void> _setVideoMaximized(
     bool enable, {
     _VideoMaximizeSource source = _VideoMaximizeSource.main,
@@ -1356,36 +1364,40 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFFFFFFF), // 纯白背景
       resizeToAvoidBottomInset: !_isVideoMaximized,
-      body: SafeArea(
-        child: Stack(
-          children: [
-            if (_isVideoMaximized)
-              Positioned.fill(
-                child: _buildVideoArea(isFullscreen: true),
-              )
-            else
-              Column(
-                children: [
-                  // 视频播放区域 - 固定16:9宽高比
-                  AspectRatio(
-                    aspectRatio: 16 / 9,
-                    child: _buildVideoArea(),
-                  ),
+      body: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: _dismissKeyboard,
+        child: SafeArea(
+          child: Stack(
+            children: [
+              if (_isVideoMaximized)
+                Positioned.fill(
+                  child: _buildVideoArea(isFullscreen: true),
+                )
+              else
+                Column(
+                  children: [
+                    // 视频播放区域 - 固定16:9宽高比
+                    AspectRatio(
+                      aspectRatio: 16 / 9,
+                      child: _buildVideoArea(),
+                    ),
 
-                  // 聊天区域 - 填充剩余空间
-                  Expanded(
-                    child: _buildChatSection(),
-                  ),
-                ],
-              ),
-            if (!_isVideoMaximized) _buildSmallVideoWindow(),
-            if (_isVideoMaximized)
-              Positioned(
-                right: 5,
-                bottom: 5,
-                child: _buildFullscreenRestoreButton(),
-              ),
-          ],
+                    // 聊天区域 - 填充剩余空间
+                    Expanded(
+                      child: _buildChatSection(),
+                    ),
+                  ],
+                ),
+              if (!_isVideoMaximized) _buildSmallVideoWindow(),
+              if (_isVideoMaximized)
+                Positioned(
+                  right: 5,
+                  bottom: 5,
+                  child: _buildFullscreenRestoreButton(),
+                ),
+            ],
+          ),
         ),
       ),
     );
