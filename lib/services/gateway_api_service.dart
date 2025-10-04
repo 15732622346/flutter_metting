@@ -180,6 +180,32 @@ class GatewayApiService {
     );
   }
 
+  Future<GatewayActionResult> sendChatMessage({
+    required String roomId,
+    required int userUid,
+    required String message,
+    required String jwtToken,
+  }) async {
+    final payload = <String, dynamic>{
+      'room_id': roomId,
+      'user_uid': userUid,
+      'message': message,
+    };
+
+    final headers = <String, String>{
+      'Authorization': 'Bearer ' + jwtToken,
+    };
+
+    final response = await _callGateway(
+      endpoint: '/api/v1/chat/send',
+      method: 'POST',
+      data: payload,
+      headers: headers,
+    );
+
+    return GatewayActionResult.fromResponse(response);
+  }
+
   Future<GatewayActionResult> requestMicrophone({
     required String roomId,
     required int userUid,

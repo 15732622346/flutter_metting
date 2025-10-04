@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:collection';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
@@ -97,6 +98,14 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
   List<ChatMessage> _chatMessages = [];
   bool _isInputFocused = false; // 输入框焦点状态
   bool _isSending = false; // 发送状态，防止按钮冲突
+  bool _isChatGloballyMuted = false;
+  final Set<String> _processedChatMessageKeys = <String>{};
+  final ListQueue<String> _chatMessageKeyQueue = ListQueue<String>();
+  static const int _chatMessageKeyLimit = 500;
+  final List<_PendingChatMessage> _pendingSelfChatMessages =
+      <_PendingChatMessage>[];
+  DateTime _lastChatSentAt = DateTime.fromMillisecondsSinceEpoch(0);
+  static const Duration _chatMessageCooldown = Duration(seconds: 2);
 
   // 浮动窗口全屏按钮防抖
   bool _isFullscreenButtonClickable = true;
@@ -188,7 +197,8 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
     bool enable, {
     _VideoMaximizeSource source = _VideoMaximizeSource.main,
   }) async {
-    if (_isVideoMaximized == enable && (!enable || _videoMaximizeSource == source)) {
+    if (_isVideoMaximized == enable &&
+        (!enable || _videoMaximizeSource == source)) {
       return;
     }
 
@@ -453,7 +463,8 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
         }
         break;
       case LiveKitEventType.speakerToggled:
-        final enabled = event.data['enabled'] as bool? ?? _liveKitService.isSpeakerEnabled;
+        final enabled =
+            event.data['enabled'] as bool? ?? _liveKitService.isSpeakerEnabled;
         if (mounted && _isSpeakerEnabled != enabled) {
           setState(() {
             _isSpeakerEnabled = enabled;
@@ -723,7 +734,9 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
     }
     if (participantName != null) {
       final normalized = participantName.trim().toLowerCase();
-      if (normalized.startsWith('guest') || participantName.contains('游客') || participantName.contains('访客')) {
+      if (normalized.startsWith('guest') ||
+          participantName.contains('游客') ||
+          participantName.contains('访客')) {
         return true;
       }
     }
@@ -734,17 +747,27 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
     if (source == null) {
       return null;
     }
-    final typeValue = _extractString(source, const ['user_type', 'userType', 'type', 'membership', 'membership_type']);
+    final typeValue = _extractString(source, const [
+      'user_type',
+      'userType',
+      'type',
+      'membership',
+      'membership_type'
+    ]);
     if (typeValue != null && typeValue.trim().isNotEmpty) {
       final lower = typeValue.toLowerCase();
-      if (lower.contains('guest') || lower.contains('visitor') || typeValue.contains('游客') || typeValue.contains('访客')) {
+      if (lower.contains('guest') ||
+          lower.contains('visitor') ||
+          typeValue.contains('游客') ||
+          typeValue.contains('访客')) {
         return true;
       }
       if (lower.contains('member') || lower.contains('user')) {
         return false;
       }
     }
-    final bool? isGuestFlag = _extractBool(source, const ['is_guest', 'isGuest']);
+    final bool? isGuestFlag =
+        _extractBool(source, const ['is_guest', 'isGuest']);
     if (isGuestFlag != null) {
       return isGuestFlag;
     }
@@ -872,49 +895,323 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
   }
 
   void _handleIncomingData(LiveKitEvent event) {
-    final rawData = event.data['data'];
-    final participant = event.data['participant'];
-
-    if (participant is lk.LocalParticipant) {
+    final dynamic rawData = event.data['data'];
+    if (rawData is! Uint8List) {
       return;
     }
 
-    if (rawData is Uint8List) {
+    final dynamic participant = event.data['participant'];
+
+    String decoded;
+    try {
+      decoded = utf8.decode(rawData).trim();
+    } catch (_) {
+      return;
+    }
+
+    if (decoded.isEmpty) {
+      return;
+    }
+
+    Map<String, dynamic>? payload;
+    if (decoded.startsWith('{') && decoded.endsWith('}')) {
       try {
-        final decoded = utf8.decode(rawData);
-        final payload = jsonDecode(decoded);
-
-        if (payload is Map<String, dynamic> && payload['type'] == 'chat') {
-          final senderName = _resolveParticipantName(participant) ??
-              payload['sender']?.toString() ??
-              '匿名用户';
-          final message = payload['message']?.toString() ?? decoded;
-          _addChatMessage(ChatMessage(
-            username: senderName,
-            message: message,
-            isSystem: false,
-            isOwn: false,
-          ));
-          return;
+        final dynamic maybeJson = jsonDecode(decoded);
+        if (maybeJson is Map<String, dynamic>) {
+          payload = maybeJson;
         }
-
-        final senderName = _resolveParticipantName(participant) ?? '系统消息';
-        _addChatMessage(ChatMessage(
-          username: senderName,
-          message: decoded,
-          isSystem: false,
-          isOwn: false,
-        ));
       } catch (_) {
-        final senderName = _resolveParticipantName(participant) ?? '系统消息';
-        _addChatMessage(ChatMessage(
-          username: senderName,
-          message: '收到了一条消息',
-          isSystem: false,
-          isOwn: false,
-        ));
+        // ignore json parse errors
       }
     }
+
+    if (payload != null) {
+      final String? typeValue =
+          _extractString(payload, const ['type', 'event'])?.toLowerCase();
+      if (typeValue == 'chat' ||
+          typeValue == 'chat-message' ||
+          typeValue == 'chat_message') {
+        _processIncomingChatMessage(payload, participant, decoded);
+        return;
+      }
+      if (typeValue == 'chat-control') {
+        _applyIncomingChatControl(payload);
+        return;
+      }
+      if (typeValue == 'chat-mute') {
+        final dynamic muteValue = payload['mute'];
+        if (muteValue is bool) {
+          _applyChatMuteState(muteValue);
+          return;
+        }
+      }
+    }
+
+    final String senderName = _resolveParticipantName(participant) ?? '系统消息';
+    _addChatMessage(ChatMessage(
+      username: senderName,
+      message: decoded,
+      isSystem: false,
+      isOwn: false,
+    ));
+  }
+
+  void _processIncomingChatMessage(
+    Map<String, dynamic> payload,
+    dynamic participant,
+    String rawText,
+  ) {
+    final dynamic primaryKey = payload['message_id'] ??
+        payload['messageId'] ??
+        payload['id'] ??
+        payload['uuid'] ??
+        payload['sequence'] ??
+        payload['seq'];
+
+    final dynamic messageValue = payload['message'];
+    final dynamic contentValue = payload['content'];
+    String content = '';
+    if (messageValue is String && messageValue.trim().isNotEmpty) {
+      content = messageValue.trim();
+    } else if (contentValue is String && contentValue.trim().isNotEmpty) {
+      content = contentValue.trim();
+    } else {
+      content = rawText.trim();
+    }
+
+    if (content.isEmpty) {
+      return;
+    }
+
+    String? identity = _extractString(payload, const [
+      'identity',
+      'participant_identity',
+      'participantIdentity',
+      'sender_identity',
+      'senderIdentity',
+      'identity_id',
+      'identityId',
+    ]);
+
+    if ((identity == null || identity.isEmpty) &&
+        participant is lk.Participant) {
+      identity = participant.identity;
+    }
+
+    int? userUid = _extractUserUidFrom(payload);
+
+    if ((userUid == null || userUid == 0) && participant is lk.Participant) {
+      final Map<String, dynamic>? metaMap =
+          _decodeParticipantMetadata(participant.metadata);
+      if (metaMap != null) {
+        userUid = _extractUserUidFrom(metaMap);
+      }
+    }
+
+    if ((userUid == null || userUid == 0) && identity != null) {
+      final String normalizedIdentity =
+          identity.replaceFirst(RegExp(r'^user_'), '');
+      final int? parsedIdentity = _tryParseInt(normalizedIdentity);
+      if (parsedIdentity != null) {
+        userUid = parsedIdentity;
+      }
+    }
+
+    final String senderName = _extractString(payload, const [
+          'nickname',
+          'user_nickname',
+          'user_name',
+          'sender_name',
+          'username',
+          'name',
+        ]) ??
+        _resolveParticipantName(participant) ??
+        (identity ?? '匿名用户');
+
+    final DateTime timestamp = _resolveChatTimestamp(
+      payload['timestamp'] ??
+          payload['sent_at'] ??
+          payload['created_at'] ??
+          payload['createdAt'] ??
+          payload['time'],
+    );
+
+    final String fallbackKey = primaryKey != null &&
+            primaryKey.toString().trim().isNotEmpty
+        ? primaryKey.toString().trim()
+        : '${userUid ?? identity ?? senderName}:${timestamp.millisecondsSinceEpoch}:$content';
+
+    if (!_markChatMessageKeyProcessed(primaryKey, fallbackKey: fallbackKey)) {
+      return;
+    }
+
+    _purgeExpiredPendingMessages();
+
+    final int? localUid = _localUserUid ??
+        _session.userId ??
+        _extractUserUidFrom(_session.userInfo) ??
+        _extractUserUidFrom(_session.roomInfo);
+    final String? localIdentity =
+        _liveKitService.room?.localParticipant?.identity;
+
+    final bool uidMatches = localUid != null &&
+        userUid != null &&
+        userUid != 0 &&
+        localUid == userUid;
+    final bool identityMatches = identity != null &&
+        localIdentity != null &&
+        identity.trim().isNotEmpty &&
+        localIdentity.trim().isNotEmpty &&
+        identity.trim() == localIdentity.trim();
+
+    final bool isSelf = uidMatches || identityMatches;
+
+    if (isSelf) {
+      final int index = _pendingSelfChatMessages.indexWhere(
+        (entry) => entry.matches(content, timestamp),
+      );
+      if (index != -1) {
+        _pendingSelfChatMessages.removeAt(index);
+      }
+    }
+
+    _addChatMessage(ChatMessage(
+      username: senderName,
+      message: content,
+      isSystem: false,
+      isOwn: isSelf,
+      timestamp: timestamp,
+    ));
+  }
+
+  void _applyIncomingChatControl(Map<String, dynamic> payload) {
+    final int? chatState =
+        _tryParseInt(payload['chat_state'] ?? payload['chatState']);
+    final bool? muteFlag = _extractBool(payload, const [
+      'mute',
+      'chat_muted',
+      'chatMuted',
+    ]);
+
+    bool? shouldMute;
+    if (muteFlag != null) {
+      shouldMute = muteFlag;
+    } else if (chatState != null) {
+      shouldMute = chatState != 1;
+    }
+
+    if (shouldMute != null) {
+      _applyChatMuteState(shouldMute);
+    }
+
+    final String? notice = _extractString(payload, const [
+      'notice',
+      'banner',
+      'message',
+    ]);
+
+    if (notice != null && notice.trim().isNotEmpty) {
+      _addChatMessage(ChatMessage(
+        username: '系统通知',
+        message: notice.trim(),
+        isSystem: true,
+        isOwn: false,
+      ));
+    }
+  }
+
+  void _applyChatMuteState(bool muted) {
+    if (_isChatGloballyMuted == muted) {
+      return;
+    }
+
+    if (mounted) {
+      setState(() {
+        _isChatGloballyMuted = muted;
+      });
+    } else {
+      _isChatGloballyMuted = muted;
+    }
+
+    final String notice = muted ? '主持人已开启全员禁言' : '主持人已允许发送聊天';
+    _addChatMessage(ChatMessage(
+      username: '系统通知',
+      message: notice,
+      isSystem: true,
+      isOwn: false,
+    ));
+  }
+
+  bool _markChatMessageKeyProcessed(
+    dynamic key, {
+    String? fallbackKey,
+  }) {
+    String? candidate;
+    if (key is String) {
+      candidate = key.trim();
+    } else if (key != null) {
+      candidate = key.toString();
+    }
+
+    candidate =
+        (candidate != null && candidate.isNotEmpty) ? candidate : fallbackKey;
+
+    if (candidate == null || candidate.isEmpty) {
+      return true;
+    }
+
+    if (_processedChatMessageKeys.contains(candidate)) {
+      return false;
+    }
+
+    _processedChatMessageKeys.add(candidate);
+    _chatMessageKeyQueue.addLast(candidate);
+
+    if (_chatMessageKeyQueue.length > _chatMessageKeyLimit) {
+      final String removed = _chatMessageKeyQueue.removeFirst();
+      _processedChatMessageKeys.remove(removed);
+    }
+
+    return true;
+  }
+
+  void _purgeExpiredPendingMessages() {
+    final DateTime now = DateTime.now();
+    _pendingSelfChatMessages.removeWhere((entry) => entry.isExpired(now));
+  }
+
+  DateTime _resolveChatTimestamp(dynamic value) {
+    final int? numeric = _tryParseInt(value);
+    if (numeric != null) {
+      if (numeric > 1000000000000) {
+        return DateTime.fromMillisecondsSinceEpoch(numeric);
+      }
+      if (numeric > 0) {
+        return DateTime.fromMillisecondsSinceEpoch(numeric * 1000);
+      }
+    }
+
+    if (value is String) {
+      final String trimmed = value.trim();
+      if (trimmed.isEmpty) {
+        return DateTime.now();
+      }
+      final int? parsedInt = int.tryParse(trimmed);
+      if (parsedInt != null) {
+        if (parsedInt > 1000000000000) {
+          return DateTime.fromMillisecondsSinceEpoch(parsedInt);
+        }
+        if (parsedInt > 0) {
+          return DateTime.fromMillisecondsSinceEpoch(parsedInt * 1000);
+        }
+      }
+      final DateTime? parsedDate = DateTime.tryParse(trimmed);
+      if (parsedDate != null) {
+        return parsedDate;
+      }
+    }
+
+    return DateTime.now();
   }
 
   Map<String, dynamic>? _decodeParticipantMetadata(String? metadata) {
@@ -1296,6 +1593,29 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
       sessionRole: _session.userRoles,
       participantName: _session.participantName,
     );
+
+    final dynamic chatStateRaw = _searchValue(roomInfo, const [
+      'chat_state',
+      'chatState',
+      'chat_status',
+      'chatStatus',
+      'chat_enabled',
+      'chatEnabled',
+    ]);
+    final int? chatState = _tryParseInt(chatStateRaw);
+    if (chatState != null) {
+      _isChatGloballyMuted = chatState != 1;
+    } else {
+      final bool? chatMutedFlag = _extractBool(roomInfo, const [
+        'chat_muted',
+        'chatMuted',
+        'mute_chat',
+        'muteChat',
+      ]);
+      if (chatMutedFlag != null) {
+        _isChatGloballyMuted = chatMutedFlag;
+      }
+    }
 
     final hostIdCandidates = [
       roomInfo['host_user_id'],
@@ -1909,7 +2229,12 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
     final int resolvedRole = _localUserRole ?? _session.userRoles ?? 1;
     final bool isHostLike = resolvedRole >= 2;
     final bool isGuestUser = _isGuestUser || resolvedRole <= 0;
-    final bool canSendMessage = !isGuestUser && !_isLocalUserDisabled;
+    final bool chatMutedForMe = _isChatGloballyMuted && !isHostLike;
+    final bool canSendMessage =
+        !isGuestUser && !_isLocalUserDisabled && !chatMutedForMe;
+    final String chatPlaceholder = canSendMessage
+        ? '输入消息...'
+        : (chatMutedForMe ? '主持人已开启全员禁言' : '游客暂不可发言，请登录');
 
     final bool micBusy = _isMicrophoneToggleInProgress;
     final bool micDisabled =
@@ -1952,9 +2277,10 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
                         : '上麦';
     final Color applyBackgroundColor =
         applyDisabled ? const Color(0xFFb5b5b5) : const Color(0xFF4595d5);
-    final VoidCallback? applyOnPressed = (!applyDisabled && !applyGuestRestricted && showApplyButton)
-        ? _handleRequestMic
-        : null;
+    final VoidCallback? applyOnPressed =
+        (!applyDisabled && !applyGuestRestricted && showApplyButton)
+            ? _handleRequestMic
+            : null;
 
     return Container(
       padding: const EdgeInsets.all(15),
@@ -1971,20 +2297,25 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
             child: SizedBox(
               height: 40,
               child: GestureDetector(
-                behavior: HitTestBehavior.translucent,
                 onTap: () {
                   if (!canSendMessage) {
-                    _showGuestRestrictionPrompt('聊天发言');
+                    if (isGuestUser) {
+                      _showGuestRestrictionPrompt('聊天发言');
+                    } else if (chatMutedForMe) {
+                      _showToast('主持人已开启全员禁言');
+                    } else {
+                      _showToast('当前暂时无法发送消息');
+                    }
                     return;
                   }
                 },
                 child: AbsorbPointer(
-                  absorbing: !canSendMessage,
+                  absorbing: !canSendMessage || _isSending,
                   child: TextField(
                     controller: _messageController,
                     focusNode: canSendMessage ? _inputFocusNode : null,
-                    readOnly: !canSendMessage,
-                    enabled: canSendMessage,
+                    readOnly: !canSendMessage || _isSending,
+                    enabled: canSendMessage && !_isSending,
                     style: TextStyle(
                       color: canSendMessage
                           ? const Color(0xFF333333)
@@ -1992,7 +2323,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
                       fontSize: 14,
                     ),
                     decoration: InputDecoration(
-                      hintText: canSendMessage ? '输入消息...' : '游客暂不可发言，请登录',
+                      hintText: chatPlaceholder,
                       hintStyle: TextStyle(
                         color: canSendMessage
                             ? Colors.grey
@@ -2035,7 +2366,8 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
                         borderSide: const BorderSide(color: Color(0xFFE0E0E0)),
                       ),
                     ),
-                    onSubmitted: canSendMessage ? _sendMessage : null,
+                    onSubmitted:
+                        canSendMessage && !_isSending ? _sendMessage : null,
                   ),
                 ),
               ),
@@ -2049,7 +2381,9 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
                   height: 40,
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
-                    onTap: () => _sendMessage(_messageController.text),
+                    onTap: (!_isSending && canSendMessage)
+                        ? () => _sendMessage(_messageController.text)
+                        : null,
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 20),
                       decoration: BoxDecoration(
@@ -2180,8 +2514,47 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
   }
 
   Future<void> _sendMessage(String message) async {
-    final text = message.trim();
-    if (text.isEmpty || _isSending) {
+    final String textValue = message.trim();
+    if (textValue.isEmpty || _isSending) {
+      return;
+    }
+
+    final int resolvedRole = _localUserRole ?? _session.userRoles ?? 1;
+    final bool isHostLike = resolvedRole >= 2;
+
+    if (_isGuestUser) {
+      _showGuestRestrictionPrompt('聊天发言');
+      return;
+    }
+
+    if (_isLocalUserDisabled) {
+      _showToast('当前暂时无法发送消息');
+      return;
+    }
+
+    if (_isChatGloballyMuted && !isHostLike) {
+      _showToast('主持人已开启全员禁言');
+      return;
+    }
+
+    final DateTime now = DateTime.now();
+    if (!isHostLike && now.difference(_lastChatSentAt) < _chatMessageCooldown) {
+      _showToast('发言太快了，请稍后再试');
+      return;
+    }
+
+    final String? token = _session.userJwtToken;
+    if (token == null || token.isEmpty) {
+      _showToast('认证信息失效，请重新登录');
+      return;
+    }
+
+    final int? userUid = _localUserUid ??
+        _session.userId ??
+        _extractUserUidFrom(_session.userInfo) ??
+        _extractUserUidFrom(_session.roomInfo);
+    if (userUid == null || userUid <= 0) {
+      _showToast('当前账号缺少标识，无法发送消息');
       return;
     }
 
@@ -2189,17 +2562,13 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
       _isSending = true;
     });
 
-    final displayName =
-        _session.participantName.isNotEmpty ? _session.participantName : '我';
-
-    _addChatMessage(ChatMessage(
-      username: displayName,
-      message: text,
-      isSystem: false,
-      isOwn: true,
-    ));
-
     _messageController.clear();
+    _purgeExpiredPendingMessages();
+    _pendingSelfChatMessages
+        .add(_PendingChatMessage(content: textValue, timestamp: now));
+    while (_pendingSelfChatMessages.length > 20) {
+      _pendingSelfChatMessages.removeAt(0);
+    }
 
     Future.delayed(const Duration(milliseconds: 50), () {
       if (mounted) {
@@ -2207,15 +2576,35 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
       }
     });
 
+    bool succeeded = false;
     try {
-      await _liveKitService.sendChatMessage(text);
+      final GatewayActionResult result =
+          await _gatewayApiService.sendChatMessage(
+        roomId: _session.roomId,
+        userUid: userUid,
+        message: textValue,
+        jwtToken: token,
+      );
+      if (result.success) {
+        succeeded = true;
+        _lastChatSentAt = now;
+      } else {
+        _pendingSelfChatMessages
+            .removeWhere((entry) => entry.matches(textValue, now));
+        final String errorMessage = result.message ?? result.error ?? '消息发送失败';
+        _showToast(errorMessage);
+      }
     } catch (error) {
-      _showToast('消息发送失败: $error');
+      _pendingSelfChatMessages
+          .removeWhere((entry) => entry.matches(textValue, now));
+      _showToast('消息发送失败: ' + error.toString());
     } finally {
       if (mounted) {
         setState(() {
           _isSending = false;
         });
+      } else {
+        _isSending = false;
       }
     }
   }
@@ -2243,19 +2632,53 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
 }
 
 /// 聊天消息数据模型
+class _PendingChatMessage {
+  _PendingChatMessage({required this.content, required this.timestamp});
+
+  final String content;
+  final DateTime timestamp;
+
+  bool matches(String otherContent, DateTime otherTimestamp) {
+    if (content != otherContent) {
+      return false;
+    }
+    return (timestamp.millisecondsSinceEpoch -
+                otherTimestamp.millisecondsSinceEpoch)
+            .abs() <=
+        5000;
+  }
+
+  bool isExpired(DateTime now) {
+    return now.difference(timestamp).inSeconds > 10;
+  }
+}
+
 class ChatMessage {
+  ChatMessage({
+    required this.username,
+    required this.message,
+    required this.isSystem,
+    this.isOwn = false,
+    DateTime? timestamp,
+  }) : timestamp = timestamp ?? DateTime.now();
+
   final String username;
   final String message;
   final bool isSystem;
   final bool isOwn;
   final DateTime timestamp;
 
-  ChatMessage({
-    required this.username,
-    required this.message,
-    required this.isSystem,
-    this.isOwn = false,
-  }) : timestamp = DateTime.now();
+  String get sender => username;
+
+  bool get isMe => isOwn;
+
+  String get timeString => _formatTime(timestamp);
+
+  static String _formatTime(DateTime time) {
+    final String hours = time.hour.toString().padLeft(2, '0');
+    final String minutes = time.minute.toString().padLeft(2, '0');
+    return '$hours:$minutes';
+  }
 }
 
 class _DashedBorderPainter extends CustomPainter {
