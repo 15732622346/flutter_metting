@@ -290,26 +290,38 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
   }
 
   Widget _buildFullscreenButton() {
-    return _buildOverlayButton(
-      icon: Icons.fullscreen,
-      label: null,
-      onTap: _handleMaximizeTap,
-      padding: const EdgeInsets.all(6),
-      borderRadius: 12,
-      backgroundColor: Colors.transparent,
-      iconSize: 27,
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.85),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: _buildOverlayButton(
+        icon: Icons.fullscreen,
+        label: null,
+        onTap: _handleMaximizeTap,
+        padding: EdgeInsets.zero,
+        borderRadius: 12,
+        backgroundColor: Colors.transparent,
+        iconSize: 27,
+      ),
     );
   }
 
   Widget _buildFullscreenRestoreButton() {
-    return _buildOverlayButton(
-      icon: Icons.fullscreen_exit,
-      label: null,
-      onTap: _handleRestoreTap,
-      padding: const EdgeInsets.all(6),
-      borderRadius: 12,
-      backgroundColor: Colors.transparent,
-      iconSize: 27,
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.85),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: _buildOverlayButton(
+        icon: Icons.fullscreen_exit,
+        label: null,
+        onTap: _handleRestoreTap,
+        padding: EdgeInsets.zero,
+        borderRadius: 12,
+        backgroundColor: Colors.transparent,
+        iconSize: 27,
+      ),
     );
   }
 

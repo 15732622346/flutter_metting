@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -44,6 +45,10 @@ class _MeetListPageState extends State<MeetListPage>
   bool _isInviteSubmitting = false;
 
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
+
+  OverlayEntry? _meetingEndedBanner;
+  Timer? _meetingEndedBannerTimer;
+
 
   static const String _secureAuthKey = AuthProvider.secureAuthKey;
 
@@ -128,6 +133,8 @@ class _MeetListPageState extends State<MeetListPage>
 
   @override
   void dispose() {
+    _meetingEndedBannerTimer?.cancel();
+    _meetingEndedBanner?.remove();
     _animationController.dispose();
     _inviteCodeAnimationController.dispose();
     _inviteCodeController.dispose();
@@ -464,22 +471,57 @@ class _MeetListPageState extends State<MeetListPage>
   }
 
   void _showMeetingEndedMessage() {
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.error_outline, color: Colors.white, size: 16),
-            SizedBox(width: 8),
-            Text('会议已结束！'),
-          ],
+    _meetingEndedBannerTimer?.cancel();
+    _meetingEndedBanner?.remove();
+
+    final overlay = Overlay.of(context);
+    if (overlay == null) {
+      return;
+    }
+
+    _meetingEndedBanner = OverlayEntry(
+      builder: (context) => Positioned(
+        top: kToolbarHeight + MediaQuery.of(context).padding.top + 8,
+        left: 16,
+        right: 16,
+        child: Material(
+          color: Colors.transparent,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: const Color(0xFF424242),
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.2),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: const [
+                Icon(Icons.error_outline, color: Colors.white, size: 16),
+                SizedBox(width: 8),
+                Text(
+                  '会议已结束！',
+                  style: TextStyle(color: Colors.white, fontSize: 14),
+                ),
+              ],
+            ),
+          ),
         ),
-        duration: Duration(seconds: 2),
-        backgroundColor: const Color(0xFF424242),
-        behavior: SnackBarBehavior.floating,
       ),
     );
+
+    overlay.insert(_meetingEndedBanner!);
+
+    _meetingEndedBannerTimer = Timer(const Duration(seconds: 2), () {
+      _meetingEndedBanner?.remove();
+      _meetingEndedBanner = null;
+    });
   }
 
   Future<void> _verifyInviteCode() async {
