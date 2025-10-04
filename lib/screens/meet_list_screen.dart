@@ -464,48 +464,22 @@ class _MeetListPageState extends State<MeetListPage>
   }
 
   void _showMeetingEndedMessage() {
-    // 先清除现有的Banner，避免叠加
-    ScaffoldMessenger.of(context).clearMaterialBanners();
-
-    ScaffoldMessenger.of(context).showMaterialBanner(
-      MaterialBanner(
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
         content: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Container(
-              width: 20,
-              height: 20,
-              decoration: BoxDecoration(
-                color: Colors.green,
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                Icons.error_outline,
-                color: Colors.white,
-                size: 14,
-              ),
-            ),
-            SizedBox(width: 12),
-            Text(
-              '会议已结束！',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-              ),
-            ),
+            Icon(Icons.error_outline, color: Colors.white, size: 16),
+            SizedBox(width: 8),
+            Text('会议已结束！'),
           ],
         ),
-        backgroundColor: Color(0xFF424242),
-        actions: [Container()], // 必须要有actions，但设置为空容器
+        duration: Duration(seconds: 2),
+        backgroundColor: const Color(0xFF424242),
+        behavior: SnackBarBehavior.floating,
       ),
     );
-
-    // 2秒后自动隐藏
-    Future.delayed(Duration(seconds: 2), () {
-      if (mounted) {
-        ScaffoldMessenger.of(context).hideCurrentMaterialBanner();
-      }
-    });
   }
 
   Future<void> _verifyInviteCode() async {

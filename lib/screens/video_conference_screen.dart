@@ -1134,12 +1134,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
     }
 
     final String notice = muted ? '主持人已开启全员禁言' : '主持人已允许发送聊天';
-    _addChatMessage(ChatMessage(
-      username: '系统通知',
-      message: notice,
-      isSystem: true,
-      isOwn: false,
-    ));
+    debugPrint('[chat] system notice suppressed: ' + notice);
   }
 
   bool _markChatMessageKeyProcessed(
@@ -1492,15 +1487,15 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
         ? _firstVideoTrackOfSource(hostParticipant, lk.TrackSource.camera)
         : null;
 
-    lk.RemoteParticipant? fallbackParticipant =
-        screenShareParticipant ?? hostParticipant;
-    if (fallbackParticipant == null && list.isNotEmpty) {
-      fallbackParticipant = list.first;
-    }
+    lk.RemoteParticipant? fallbackParticipant;
+    lk.VideoTrack? fallbackTrack;
 
-    lk.VideoTrack? fallbackTrack = screenShareTrack;
-    if (fallbackTrack == null && fallbackParticipant != null) {
-      fallbackTrack = _firstVideoTrack(fallbackParticipant);
+    if (screenShareTrack != null) {
+      fallbackParticipant = screenShareParticipant ?? hostParticipant;
+      fallbackTrack = screenShareTrack;
+    } else {
+      fallbackParticipant = null;
+      fallbackTrack = null;
     }
 
     if (!mounted) {
@@ -1663,18 +1658,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
     final participantName =
         _session.participantName.isNotEmpty ? _session.participantName : '访客';
 
-    _chatMessages = [
-      ChatMessage(
-        username: '系统',
-        message: '系统：欢迎 $participantName 加入 ${_session.roomName}',
-        isSystem: true,
-      ),
-      ChatMessage(
-        username: '系统',
-        message: '系统：主持人 $_moderator 正在等待大家入场',
-        isSystem: true,
-      ),
-    ];
+    _chatMessages = [];
   }
 
   // 移除计时器相关代码，聚焦于聊天功能
