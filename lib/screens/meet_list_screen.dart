@@ -103,6 +103,10 @@ class _MeetListPageState extends State<MeetListPage>
         return;
       }
       try {
+        await Future.delayed(const Duration(seconds: 5));
+        if (!mounted) {
+          return;
+        }
         await AppUpdater.checkAndUpdate(context);
       } catch (error) {
         debugPrint('Auto update check failed: $error');

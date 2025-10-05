@@ -100,6 +100,8 @@ class AppUpdater {
   /// 从服务器获取版本信息（带容灾机制）
   static Future<Map<String, dynamic>?> _fetchServerVersionInfo() async {
     final dio = Dio();
+    dio.options.connectTimeout = const Duration(seconds: 3);
+    dio.options.receiveTimeout = const Duration(seconds: 3);
 
     // Web 平台特殊配置
     if (kIsWeb) {
@@ -110,9 +112,9 @@ class AppUpdater {
         'Access-Control-Allow-Headers': 'Content-Type, Authorization',
       });
 
-      // 设置更长的超时时间
-      dio.options.connectTimeout = const Duration(seconds: 30);
-      dio.options.receiveTimeout = const Duration(seconds: 30);
+      // 设置请求超时时间
+      dio.options.connectTimeout = const Duration(seconds: 3);
+      dio.options.receiveTimeout = const Duration(seconds: 3);
     }
 
     // 尝试主要URL
