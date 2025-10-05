@@ -8,6 +8,7 @@ import '../models/room_model.dart';
 import '../services/room_list_service.dart';
 import '../models/room_join_data.dart';
 import '../services/gateway_api_service.dart';
+import '../services/app_updater.dart';
 import '../providers/auth_provider.dart';
 import 'video_conference_screen.dart';
 import 'simple_profile_screen.dart';
@@ -43,6 +44,7 @@ class _MeetListPageState extends State<MeetListPage>
   String _selectedRoomId = '';
   bool _isMeetingCardClickable = true; // 防抖标志
   bool _isInviteSubmitting = false;
+  bool _hasCheckedUpdateOnLaunch = false;
 
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
 
@@ -88,6 +90,24 @@ class _MeetListPageState extends State<MeetListPage>
     _checkLoginState();
 
     _loadRooms();
+    _scheduleInitialUpdateCheck();
+  }
+
+  void _scheduleInitialUpdateCheck() {
+    if (_hasCheckedUpdateOnLaunch) {
+      return;
+    }
+    _hasCheckedUpdateOnLaunch = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) {
+        return;
+      }
+      try {
+        await AppUpdater.checkAndUpdate(context);
+      } catch (error) {
+        debugPrint('Auto update check failed: $error');
+      }
+    });
   }
 
   Future<void> _loadRooms() async {
