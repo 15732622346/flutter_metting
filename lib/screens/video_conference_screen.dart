@@ -91,7 +91,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
 
   // 麦位和聊天数据
   int _totalMicSeats = 10;
-  int _occupiedMicSeats = 8;
+  int _occupiedMicSeats = 0;
   String _moderator = '主持人';
 
   // 模拟聊天消息
@@ -493,6 +493,10 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
     final lk.LocalParticipant? localParticipant = room?.localParticipant;
     int requestingCount = 0;
     int onMicCount = 0;
+    int visibleSeatCount = 0;
+    bool hostVisible = false;
+    bool hostPresent = false;
+    final int? targetHostUid = _hostUserUid;
     bool localMicEnabled = false;
     bool localDisabled = false;
     bool canPublishAudio = false;
@@ -526,10 +530,27 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
 
       if (localStatus == 'requesting') {
         requestingCount += 1;
-      } else if (_isMicSeatStatus(localStatus)) {
-        onMicCount += 1;
-      }
+      } else {
+        final bool isLocalHost = roleInfo.isHostOrAdmin ||
+            (targetHostUid != null &&
+                (roleInfo.userUid == targetHostUid ||
+                    localUid == targetHostUid));
+        if (isLocalHost) {
+          hostPresent = true;
+        }
 
+        final isSeatVisible =
+            _isSeatVisible(localMetadata, micStatus: localStatus);
+        if (isSeatVisible) {
+          visibleSeatCount += 1;
+          if (isLocalHost) {
+            hostVisible = true;
+          }
+          if (_isMicSeatStatus(localStatus)) {
+            onMicCount += 1;
+          }
+        }
+      }
       canPublishAudio = roleInfo.isHostOrAdmin ||
           localParticipant.permissions.canPublish ||
           _extractBool(
@@ -544,22 +565,37 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
         const Iterable<lk.RemoteParticipant>.empty();
     for (final participant in participants) {
       final metadata = _decodeParticipantMetadata(participant.metadata);
-      if (!_shouldDisplayParticipant(metadata)) {
-        continue;
-      }
       final status = _extractMicStatus(metadata);
       if (status == 'requesting') {
         requestingCount += 1;
-      } else if (_isMicSeatStatus(status)) {
-        onMicCount += 1;
+        continue;
+      }
+
+      final roleInfo = _participantRoleInfo(participant);
+      final bool isHostParticipant = roleInfo.isHostOrAdmin ||
+          (targetHostUid != null && roleInfo.userUid == targetHostUid) ||
+          _matchesHostIdentity(participant);
+      if (isHostParticipant) {
+        hostPresent = true;
+      }
+
+      final isSeatVisible = _isSeatVisible(metadata, micStatus: status);
+      if (isSeatVisible) {
+        visibleSeatCount += 1;
+        if (isHostParticipant) {
+          hostVisible = true;
+        }
+        if (_isMicSeatStatus(status)) {
+          onMicCount += 1;
+        }
       }
     }
 
-    final hasLocal = localParticipant != null;
-    final fallbackOccupied = _remoteParticipants.length + (hasLocal ? 1 : 0);
-    final effectiveOccupied = onMicCount > 0 ? onMicCount : fallbackOccupied;
-    final clampedOccupied =
-        math.max(0, math.min(_totalMicSeats, effectiveOccupied));
+    if (hostPresent && !hostVisible) {
+      visibleSeatCount = math.min(_totalMicSeats, visibleSeatCount + 1);
+    }
+    final seatCount = onMicCount > 0 ? onMicCount : visibleSeatCount;
+    final clampedOccupied = math.max(0, math.min(_totalMicSeats, seatCount));
 
     if (!mounted) {
       return;
@@ -596,14 +632,37 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
     }
   }
 
-  bool _shouldDisplayParticipant(Map<String, dynamic>? metadata) {
+  bool _isSeatVisible(Map<String, dynamic>? metadata, {String? micStatus}) {
     final display =
         _extractString(metadata, ['display_status', 'displayStatus']);
-    if (display == null) {
+    if (display != null) {
+      final normalized = display.toLowerCase();
+      if (normalized == 'visible') {
+        return true;
+      }
+      if (normalized == 'hidden') {
+        return false;
+      }
+    }
+
+    final resolvedStatus = micStatus ?? _extractMicStatus(metadata);
+    if (_isMicSeatStatus(resolvedStatus)) {
       return true;
     }
-    final normalized = display.toLowerCase();
-    return normalized != 'hidden';
+
+    final role = _extractString(metadata, ['role', 'role_type', 'roleType']);
+    if (role != null) {
+      final normalizedRole = role.trim().toLowerCase();
+      if (normalizedRole == '2' ||
+          normalizedRole == '3' ||
+          normalizedRole == 'host' ||
+          normalizedRole == 'admin' ||
+          normalizedRole == 'moderator') {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   String _resolveLocalMicStatus(Map<String, dynamic>? metadata,
@@ -1662,9 +1721,12 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
       _totalMicSeats = maxSlots;
     }
 
-    final onlineCount = roomInfo['online_count'] ?? roomInfo['onlineCount'];
-    if (onlineCount is int && onlineCount >= 0) {
-      _occupiedMicSeats = onlineCount;
+    final occupiedCount =
+        roomInfo['occupied_mic_count'] ?? roomInfo['occupiedMicCount'];
+    if (occupiedCount is int && occupiedCount >= 0) {
+      _occupiedMicSeats = math.min(_totalMicSeats, occupiedCount);
+    } else {
+      _occupiedMicSeats = 0;
     }
 
     final participantName =
@@ -2140,7 +2202,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
                   children: [
                     const TextSpan(text: '麦位 '),
                     TextSpan(
-                      text: '$_totalMicSeats 个, ',
+                      text: '${_occupiedMicSeats}/$_totalMicSeats, ',
                       style: const TextStyle(color: Color(0xFFffe200)),
                     ),
                     const TextSpan(text: '主持人：'),

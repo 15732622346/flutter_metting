@@ -27,7 +27,7 @@ class VersionConfig {
     : '基础功能版';
     
   /// 版本号（与pubspec.yaml保持一致）
-  static String get versionNumber => IS_NEW_VERSION ? '3.0.0' : '3.0.0';
+  static String get versionNumber => IS_NEW_VERSION ? '3.5.0' : '3.5.0';
   
   // ==================== 功能开关 ====================
   

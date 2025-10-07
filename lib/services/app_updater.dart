@@ -315,40 +315,19 @@ class AppUpdater {
   /// 一键检查并更新（推荐使用）
   static Future<void> checkAndUpdate(BuildContext context) async {
     try {
-      // 显示检查中对话框
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => AlertDialog(
-          content: Row(
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(width: 16),
-              Text('检查更新中...'),
-            ],
-          ),
-        ),
-      );
-      
-      // 检查更新
       final updateInfo = await checkForUpdate();
-      Navigator.of(context).pop(); // 关闭检查对话框
-      
+
       if (updateInfo['hasUpdate'] == true) {
-        // 显示更新确认对话框
         final shouldUpdate = await _showUpdateConfirmDialog(context, updateInfo);
-        
+
         if (shouldUpdate == true) {
           final downloadUrl = updateInfo['downloadUrl'] ?? '';
-          // 执行自动安装更新
           await downloadAndAutoInstall(context, downloadUrl);
         }
-      } else {
-        _showToast(updateInfo['error'] ?? '当前已是最新版本');
+      } else if (updateInfo['error'] != null && updateInfo['error'].toString().isNotEmpty) {
+        _showToast(updateInfo['error']);
       }
-      
     } catch (e) {
-      Navigator.of(context).pop();
       _showToast('检查更新失败: $e');
     }
   }
