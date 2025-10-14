@@ -872,6 +872,10 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
       _showToast('您已在麦位上');
       return;
     }
+    if (_totalMicSeats > 0 && _occupiedMicSeats >= _totalMicSeats) {
+      _showToast('麦位已满，暂时无法申请');
+      return;
+    }
     final userUid = _localUserUid ?? _session.userId;
     if (userUid == null) {
       _showToast('缺少用户标识，无法申请上麦');
@@ -2313,11 +2317,14 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
     final bool alreadyOnMic = _isMicSeatStatus(_localMicStatus);
     final bool applyBusy = _isApplyingMic;
     final bool applyGuestRestricted = isGuestUser;
+    final bool micSlotsFull =
+        _totalMicSeats > 0 && _occupiedMicSeats >= _totalMicSeats;
     final bool applyDisabled = !showApplyButton ||
         applyBusy ||
         localRequesting ||
         alreadyOnMic ||
-        _isLocalUserDisabled;
+        _isLocalUserDisabled ||
+        micSlotsFull;
     final String applyLabel = !showApplyButton
         ? '上麦'
         : applyBusy
@@ -2328,7 +2335,9 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
                     ? '等待审批'
                     : alreadyOnMic
                         ? '已在麦位'
-                        : '上麦';
+                        : micSlotsFull
+                            ? '已满'
+                            : '上麦';
     final Color applyBackgroundColor =
         applyDisabled ? const Color(0xFFb5b5b5) : const Color(0xFF4595d5);
     final VoidCallback? applyOnPressed =
