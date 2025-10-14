@@ -492,7 +492,6 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
     final room = _liveKitService.room;
     final lk.LocalParticipant? localParticipant = room?.localParticipant;
     int requestingCount = 0;
-    int onMicCount = 0;
     int visibleSeatCount = 0;
     bool hostVisible = false;
     bool hostPresent = false;
@@ -528,29 +527,27 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
         localMicEnabled: localMicEnabled,
       );
 
+      final bool isLocalHost = roleInfo.isHostOrAdmin ||
+          (targetHostUid != null &&
+              (roleInfo.userUid == targetHostUid ||
+                  localUid == targetHostUid));
+      if (isLocalHost) {
+        hostPresent = true;
+      }
+
       if (localStatus == 'requesting') {
         requestingCount += 1;
-      } else {
-        final bool isLocalHost = roleInfo.isHostOrAdmin ||
-            (targetHostUid != null &&
-                (roleInfo.userUid == targetHostUid ||
-                    localUid == targetHostUid));
-        if (isLocalHost) {
-          hostPresent = true;
-        }
+      }
 
-        final isSeatVisible =
-            _isSeatVisible(localMetadata, micStatus: localStatus);
-        if (isSeatVisible) {
-          visibleSeatCount += 1;
-          if (isLocalHost) {
-            hostVisible = true;
-          }
-          if (_isMicSeatStatus(localStatus)) {
-            onMicCount += 1;
-          }
+      final isSeatVisible =
+          _isSeatVisible(localMetadata, micStatus: localStatus);
+      if (isSeatVisible) {
+        visibleSeatCount += 1;
+        if (isLocalHost) {
+          hostVisible = true;
         }
       }
+
       canPublishAudio = roleInfo.isHostOrAdmin ||
           localParticipant.permissions.canPublish ||
           _extractBool(
@@ -568,7 +565,6 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
       final status = _extractMicStatus(metadata);
       if (status == 'requesting') {
         requestingCount += 1;
-        continue;
       }
 
       final roleInfo = _participantRoleInfo(participant);
@@ -585,17 +581,14 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
         if (isHostParticipant) {
           hostVisible = true;
         }
-        if (_isMicSeatStatus(status)) {
-          onMicCount += 1;
-        }
       }
     }
 
     if (hostPresent && !hostVisible) {
       visibleSeatCount = math.min(_totalMicSeats, visibleSeatCount + 1);
     }
-    final seatCount = onMicCount > 0 ? onMicCount : visibleSeatCount;
-    final clampedOccupied = math.max(0, math.min(_totalMicSeats, seatCount));
+    final clampedDisplayedSeats =
+        math.max(0, math.min(_totalMicSeats, visibleSeatCount));
 
     if (!mounted) {
       return;
@@ -618,7 +611,7 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
       _localUserRole = localRole;
       _localUserUid = localUid;
       _requestingMicCount = requestingCount;
-      _occupiedMicSeats = clampedOccupied;
+      _occupiedMicSeats = clampedDisplayedSeats;
     });
   }
 
@@ -1721,10 +1714,13 @@ class _VideoConferenceScreenState extends State<VideoConferenceScreen> {
       _totalMicSeats = maxSlots;
     }
 
-    final occupiedCount =
-        roomInfo['occupied_mic_count'] ?? roomInfo['occupiedMicCount'];
-    if (occupiedCount is int && occupiedCount >= 0) {
-      _occupiedMicSeats = math.min(_totalMicSeats, occupiedCount);
+    final displayedCountRaw = roomInfo['mic_list_count'] ??
+        roomInfo['micListCount'] ??
+        roomInfo['occupied_mic_count'] ??
+        roomInfo['occupiedMicCount'];
+    final displayedCount = _tryParseInt(displayedCountRaw);
+    if (displayedCount != null && displayedCount >= 0) {
+      _occupiedMicSeats = math.min(_totalMicSeats, displayedCount);
     } else {
       _occupiedMicSeats = 0;
     }
